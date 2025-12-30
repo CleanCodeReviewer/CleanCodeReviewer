@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clean-code-reviewer"
+version = "0.1.0"
+description = "A CLI tool for reviewing code against customizable clean code rules using LLMs"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "Yumin Gui" }
+]
+keywords = ["code-review", "clean-code", "llm", "cli", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "typer>=0.9.0",
+    "litellm>=1.0.0",
+    "fastmcp>=0.1.0",
+    "rich>=13.0.0",
+    "textual>=6.11.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+clean-code-reviewer = "clean_code_reviewer.cli:app"
+ccr = "clean_code_reviewer.cli:app"
+
+[project.urls]
+Homepage = "https://cleancodereviewer.com"
+Documentation = "https://github.com/CleanCodeReviewer/CleanCodeReviewer#readme"
+Repository = "https://github.com/CleanCodeReviewer/CleanCodeReviewer"
+Issues = "https://github.com/CleanCodeReviewer/CleanCodeReviewer/issues"
+Rules = "https://github.com/CleanCodeReviewer/Rules"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clean_code_reviewer"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/clean_code_reviewer",
+    "/tests",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["clean_code_reviewer"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
