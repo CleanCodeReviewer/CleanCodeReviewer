@@ -68,7 +68,7 @@ def main(
 
 
 def _is_claude_code_installed() -> bool:
-    """Check if Claude Code CLI is installed."""
+    """Check if Claude Code CLI is installed globally."""
     import shutil
 
     # Check if 'claude' command exists in PATH
@@ -84,7 +84,7 @@ def _is_claude_code_installed() -> bool:
 
 
 def _is_gemini_cli_installed() -> bool:
-    """Check if Gemini CLI is installed."""
+    """Check if Gemini CLI is installed globally."""
     import shutil
 
     # Check if 'gemini' command exists in PATH
@@ -97,6 +97,31 @@ def _is_gemini_cli_installed() -> bool:
         return True
 
     return False
+
+
+def _project_uses_claude(project_path: Path) -> bool:
+    """Check if project uses Claude Code (has .claude directory)."""
+    return (project_path / ".claude").exists()
+
+
+def _project_uses_gemini(project_path: Path) -> bool:
+    """Check if project uses Gemini CLI (has .gemini directory)."""
+    return (project_path / ".gemini").exists()
+
+
+def _get_project_targets(project_path: Path) -> list[str]:
+    """Get list of AI coding assistants that should be configured for this project.
+
+    Returns targets where both:
+    1. The CLI is installed globally
+    2. The project has the corresponding directory
+    """
+    targets = []
+    if _is_claude_code_installed() and _project_uses_claude(project_path):
+        targets.append("claude")
+    if _is_gemini_cli_installed() and _project_uses_gemini(project_path):
+        targets.append("gemini")
+    return targets
 
 
 def _get_prompt_instructions() -> str:
@@ -284,12 +309,8 @@ def init(
             write_file_safe(gitignore_path, gitignore_content + separator + ".cleancoderules\n")
             console.print(f"  [green]✓[/green] Added .cleancoderules to .gitignore")
 
-    # Install hooks for detected AI coding assistants
-    detected_targets = []
-    if _is_claude_code_installed():
-        detected_targets.append("claude")
-    if _is_gemini_cli_installed():
-        detected_targets.append("gemini")
+    # Install hooks for AI coding assistants used in this project
+    detected_targets = _get_project_targets(path)
 
     if detected_targets:
         console.print("\n[bold]Installing hooks...[/bold]")
@@ -736,13 +757,17 @@ def update_hooks(
 
     # Determine targets
     if target == "all":
-        targets = []
-        if _is_claude_code_installed():
-            targets.append("claude")
-        if _is_gemini_cli_installed():
-            targets.append("gemini")
+        # For global scope: only need CLI installed
+        # For project scope: need CLI installed AND project has directory
+        if global_scope:
+            targets = _get_detected_targets()
+        else:
+            targets = _get_project_targets(path)
         if not targets:
-            console.print("[yellow]No AI coding assistants detected[/yellow]")
+            if global_scope:
+                console.print("[yellow]No AI coding assistants detected[/yellow]")
+            else:
+                console.print("[yellow]No AI coding assistants detected for this project[/yellow]")
             raise typer.Exit(1)
     elif target in HOOK_TARGETS:
         targets = [target]
@@ -1385,10 +1410,19 @@ def hooks_install(
 
     # Determine targets
     if target == "all":
-        targets = _get_detected_targets()
+        # For global scope: only need CLI installed
+        # For project scope: need CLI installed AND project has directory
+        if global_scope:
+            targets = _get_detected_targets()
+        else:
+            targets = _get_project_targets(Path("."))
         if not targets:
-            console.print("[yellow]No AI coding assistants detected[/yellow]")
-            console.print("Install Claude Code or Gemini CLI first")
+            if global_scope:
+                console.print("[yellow]No AI coding assistants detected[/yellow]")
+                console.print("Install Claude Code or Gemini CLI first")
+            else:
+                console.print("[yellow]No AI coding assistants detected for this project[/yellow]")
+                console.print("Make sure .claude or .gemini directory exists in your project")
             raise typer.Exit(1)
     elif target in HOOK_TARGETS:
         targets = [target]

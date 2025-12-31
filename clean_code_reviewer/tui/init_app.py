@@ -26,7 +26,7 @@ PROMPT_OPTIONS = [
 
 
 def _is_claude_code_installed() -> bool:
-    """Check if Claude Code CLI is installed."""
+    """Check if Claude Code CLI is installed globally."""
     if shutil.which("claude"):
         return True
     claude_dir = Path.home() / ".claude"
@@ -36,7 +36,7 @@ def _is_claude_code_installed() -> bool:
 
 
 def _is_gemini_cli_installed() -> bool:
-    """Check if Gemini CLI is installed."""
+    """Check if Gemini CLI is installed globally."""
     if shutil.which("gemini"):
         return True
     gemini_dir = Path.home() / ".gemini"
@@ -45,12 +45,17 @@ def _is_gemini_cli_installed() -> bool:
     return False
 
 
-def _get_detected_targets() -> list[str]:
-    """Get list of detected AI coding assistants."""
+def _get_detected_targets(project_path: Path) -> list[str]:
+    """Get list of AI coding assistants that should be configured for this project.
+
+    Returns targets where both:
+    1. The CLI is installed globally
+    2. The project has the corresponding directory (.claude or .gemini)
+    """
     targets = []
-    if _is_claude_code_installed():
+    if _is_claude_code_installed() and (project_path / ".claude").exists():
         targets.append("Claude Code")
-    if _is_gemini_cli_installed():
+    if _is_gemini_cli_installed() and (project_path / ".gemini").exists():
         targets.append("Gemini CLI")
     return targets
 
@@ -148,7 +153,7 @@ class InitApp(App[InitResult]):
                 yield Static("CCR Initialization", classes="title")
 
                 # Hook info section (show detected AI assistants)
-                detected = _get_detected_targets()
+                detected = _get_detected_targets(self.project_path)
                 if detected:
                     yield Static("Hooks", classes="section-title")
                     hook_info = "✓ Will install hooks for:\n"
