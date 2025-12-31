@@ -159,7 +159,7 @@ class InitApp(App[InitResult]):
                     hook_info = "✓ Will install hooks for:\n"
                     for target in detected:
                         hook_info += f"  • {target}\n"
-                    hook_info += "  CCR runs automatically after file edits"
+                    hook_info += "  CCR reviews code after file edits"
                     yield Static(hook_info, classes="hook-info")
 
                 # Prompt files section

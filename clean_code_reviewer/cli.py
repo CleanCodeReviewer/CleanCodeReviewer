@@ -1235,33 +1235,24 @@ def _get_ccr_hook_configs(target: str) -> dict:
     """Get the CCR hook configurations for the target CLI.
 
     Returns a dict with hook event names as keys and hook configs as values.
-    Before hooks: show rules to follow during coding
-    After hooks: review code and suggest refactoring
+    Only installs post-tool hooks to review code after edits.
     """
     if target == "gemini":
-        # Gemini CLI: BeforeTool and AfterTool
+        # Gemini CLI: AfterTool only
         matcher = "edit_file|write_file"
         return {
-            "BeforeTool": {
-                "matcher": matcher,
-                "hooks": [{"type": "command", "command": "ccr hooks handle --event before"}],
-            },
             "AfterTool": {
                 "matcher": matcher,
-                "hooks": [{"type": "command", "command": "ccr hooks handle --event after"}],
+                "hooks": [{"type": "command", "command": "ccr hooks handle"}],
             },
         }
     else:  # claude
-        # Claude Code: PreToolUse and PostToolUse
+        # Claude Code: PostToolUse only
         matcher = "Edit|Write|NotebookEdit"
         return {
-            "PreToolUse": {
-                "matcher": matcher,
-                "hooks": [{"type": "command", "command": "ccr hooks handle --event before"}],
-            },
             "PostToolUse": {
                 "matcher": matcher,
-                "hooks": [{"type": "command", "command": "ccr hooks handle --event after"}],
+                "hooks": [{"type": "command", "command": "ccr hooks handle"}],
             },
         }
 
@@ -1521,17 +1512,10 @@ def hooks_status() -> None:
 
 
 @hooks_app.command(name="handle", hidden=True)
-def hooks_handle(
-    event: Annotated[
-        str,
-        typer.Option("--event", "-e", help="Hook event type: 'before' or 'after'"),
-    ] = "after",
-) -> None:
+def hooks_handle() -> None:
     """Handle hook events from AI coding assistants (internal command).
 
-    Before event: Output rules for the AI to follow during coding.
-    After event: Review the code and suggest refactoring.
-
+    Reviews the edited code and suggests refactoring.
     Works on Windows, macOS, and Linux.
     """
     import json
@@ -1549,93 +1533,60 @@ def hooks_handle(
         tool_input = hook_input.get("tool_input", {})
         file_path = tool_input.get("file_path") or tool_input.get("notebook_path")
 
+        if not file_path:
+            sys.exit(0)
+
+        target_file = Path(file_path)
+        if not target_file.exists():
+            sys.exit(0)
+
         # Check if .cleancoderules directory exists
         rules_dir = Path(".cleancoderules")
         if not rules_dir.exists():
             sys.exit(0)
 
+        from clean_code_reviewer.core.prompt_builder import CodeContext, PromptBuilder
+        from clean_code_reviewer.core.reviewers import ReviewRequest, get_reviewer
         from clean_code_reviewer.core.rules_engine import RulesEngine
 
         engine = RulesEngine(rules_dir)
+        builder = PromptBuilder(engine)
 
-        if event == "before":
-            # Before: Show rules to follow during coding
-            if not file_path:
-                # No file path yet, show all rules
-                rules_text = engine.merge_rules()
-            else:
-                # Detect language from file extension
-                target_file = Path(file_path)
-                ext = target_file.suffix.lower()
-                lang_map = {
-                    ".py": "python", ".js": "javascript", ".ts": "typescript",
-                    ".tsx": "typescript", ".jsx": "javascript", ".go": "go",
-                    ".rs": "rust", ".java": "java", ".rb": "ruby", ".php": "php",
-                }
-                language = lang_map.get(ext)
-                rules_text = engine.merge_rules(language=language)
+        context = CodeContext.from_file(target_file)
+        if context is None:
+            sys.exit(0)
 
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "additionalContext": (
-                        "## CCR Rules - Follow these during coding:\n\n"
-                        f"{rules_text}\n\n"
-                        "Apply these rules while writing/editing this file."
-                    ),
-                }
+        system_prompt, user_prompt = builder.build_review_prompt(code=context)
+
+        request = ReviewRequest(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            file_path=str(target_file),
+            language=context.language,
+        )
+
+        settings = get_effective_settings()
+        reviewer = get_reviewer("litellm", model=settings.model, settings=settings)
+
+        if not reviewer.is_available():
+            sys.exit(0)
+
+        response = reviewer.review(request)
+
+        if response.error:
+            sys.exit(0)
+
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": (
+                    f"## CCR Review for {file_path}:\n\n"
+                    f"{response.content}\n\n"
+                    "Fix any violations before continuing."
+                ),
             }
-            print(json.dumps(output))
-
-        else:  # after
-            # After: Review the code and suggest refactoring
-            if not file_path:
-                sys.exit(0)
-
-            target_file = Path(file_path)
-            if not target_file.exists():
-                sys.exit(0)
-
-            from clean_code_reviewer.core.prompt_builder import CodeContext, PromptBuilder
-            from clean_code_reviewer.core.reviewers import ReviewRequest, get_reviewer
-
-            builder = PromptBuilder(engine)
-
-            context = CodeContext.from_file(target_file)
-            if context is None:
-                sys.exit(0)
-
-            system_prompt, user_prompt = builder.build_review_prompt(code=context)
-
-            request = ReviewRequest(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                file_path=str(target_file),
-                language=context.language,
-            )
-
-            settings = get_effective_settings()
-            reviewer = get_reviewer("litellm", model=settings.model, settings=settings)
-
-            if not reviewer.is_available():
-                sys.exit(0)
-
-            response = reviewer.review(request)
-
-            if response.error:
-                sys.exit(0)
-
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": (
-                        f"## CCR Review for {file_path}:\n\n"
-                        f"{response.content}\n\n"
-                        "Fix any violations before continuing."
-                    ),
-                }
-            }
-            print(json.dumps(output))
+        }
+        print(json.dumps(output))
 
     except Exception:
         # Always exit silently on any error
