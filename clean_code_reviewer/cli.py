@@ -82,9 +82,9 @@ def _get_agent_instructions() -> str:
 3. Fix any violations before presenting the code.
 
 ### Rule Priority
-- Level 3: Team rules in `.cleancoderules/` (highest)
-- Level 2: Language-specific rules
-- Level 1: General principles
+- Level 3: Team rules in `.cleancoderules/team/` (highest)
+- Level 2: Community rules in `.cleancoderules/community/`
+- Level 1: Base rules (general principles)
 
 If rules conflict, always follow the higher-level rule.
 """
