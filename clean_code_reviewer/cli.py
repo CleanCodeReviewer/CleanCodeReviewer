@@ -196,15 +196,15 @@ rules_priority:
     write_file_safe(rules_dir / "config.yaml", default_config)
     console.print(f"  [green]✓[/green] Created config.yaml")
 
-    # Download base.md (Level 1)
+    # Download base.yml (Level 1)
     if not skip_download:
         console.print("\n[bold]Downloading base rules...[/bold]")
         with RulesManager() as manager:
             result = manager.download_rule("base", rules_dir)
             if result:
-                console.print(f"  [green]✓[/green] Downloaded base.md")
+                console.print(f"  [green]✓[/green] Downloaded base.yml")
             else:
-                console.print(f"  [yellow]![/yellow] Could not download base.md (will use sample)")
+                console.print(f"  [yellow]![/yellow] Could not download base.yml (will use sample)")
                 _write_sample_base_rule(rules_dir)
 
         # Ask for languages (unless non-interactive)
@@ -230,11 +230,11 @@ rules_priority:
                             console.print(f"  [yellow]![/yellow] Could not download {rule_path}")
     else:
         _write_sample_base_rule(rules_dir)
-        console.print(f"  [green]✓[/green] Created base.md (sample)")
+        console.print(f"  [green]✓[/green] Created base.yml (sample)")
 
     # Create sample team rule
     _write_sample_team_rule(rules_dir / "team")
-    console.print(f"  [green]✓[/green] Created team/example.md")
+    console.print(f"  [green]✓[/green] Created team/example.yml")
 
     # Create order.yml
     order_manager = OrderManager(rules_dir)
@@ -273,6 +273,16 @@ rules_priority:
                 write_file_safe(cursor_path, instructions)
                 console.print(f"\n  [green]✓[/green] Created .cursorrules")
 
+    # Add .cleancoderules to .gitignore if it exists
+    gitignore_path = path / ".gitignore"
+    if gitignore_path.exists():
+        gitignore_content = read_file_safe(gitignore_path) or ""
+        if ".cleancoderules" not in gitignore_content:
+            # Append with newline if file doesn't end with one
+            separator = "" if gitignore_content.endswith("\n") else "\n"
+            write_file_safe(gitignore_path, gitignore_content + separator + ".cleancoderules\n")
+            console.print(f"  [green]✓[/green] Added .cleancoderules to .gitignore")
+
     # Summary
     console.print("\n[bold green]Initialization complete![/bold green]")
     console.print("\nNext steps:")
@@ -282,67 +292,84 @@ rules_priority:
 
 
 def _write_sample_base_rule(rules_dir: Path) -> None:
-    """Write a sample base.md rule file."""
-    sample_rule = """---
-name: base
-tags: [general, style]
----
+    """Write a sample base.yml rule file."""
+    sample_rule = """# Base Principles
+# Foundational clean code principles that apply to all languages.
 
-# Base Principles
+_meta:
+  name: base
+  tags: [general, style]
 
-These are the foundational clean code principles that apply to all languages.
+naming:
+  descriptive_names:
+    enforcement: MUST
+    value: "Use meaningful, descriptive names for variables, functions, and classes"
+    good: |
+      user_count = len(users)
+      def calculate_total_price(items):
+          pass
+    bad: |
+      x = len(u)
+      def calc(i):
+          pass
 
-## Code Quality
+functions:
+  single_responsibility:
+    enforcement: SHOULD
+    value: "Each function should do one thing well"
+  max_lines:
+    enforcement: SHOULD
+    value: 20
 
-- Write clear, self-documenting code
-- Use meaningful variable and function names
-- Keep functions small and focused
-- Follow the Single Responsibility Principle
-
-## Comments
-
-- Comment the "why", not the "what"
-- Keep comments up-to-date with code changes
-- Use docstrings for public APIs
-
-## Error Handling
-
-- Handle errors gracefully
-- Provide meaningful error messages
-- Don't swallow exceptions silently
+error_handling:
+  meaningful_messages:
+    enforcement: SHOULD
+    value: "Provide meaningful error messages"
+  silent_exceptions:
+    enforcement: MUST_NOT
+    value: "Never swallow exceptions silently"
+    bad: |
+      try:
+          risky_operation()
+      except:
+          pass
 """
-    write_file_safe(rules_dir / "base.md", sample_rule)
+    write_file_safe(rules_dir / "base.yml", sample_rule)
 
 
 def _write_sample_team_rule(team_dir: Path) -> None:
     """Write a sample team rule to team/ folder."""
-    sample_rule = """---
-name: team-example
-tags: [team]
----
+    sample_rule = """# Team Rules (Example)
+# These rules have the HIGHEST priority (Level 3) and override all other rules.
+#
+# Hierarchy:
+#   1. base.yml - Level 1 (base principles)
+#   2. community/ - Level 2 (external rules: google, airbnb, etc.)
+#   3. team/ - Level 3 (your team's rules - HIGHEST)
 
-# Team Rules (Example)
+_meta:
+  name: team-example
+  tags: [team]
 
-These rules have the HIGHEST priority (Level 3) and override all other rules.
-
-## Hierarchy
-
-1. base.md - Level 1 (base principles)
-2. community/ - Level 2 (all external rules: google, airbnb, etc.)
-3. team/ - Level 3 (your team's rules - HIGHEST)
-
-## How to Use
-
-1. Add your team-specific rules here
-2. Rules in team/ folder always take precedence
-3. Use `ccr order` to reorder rules within the same level
-
-## Example Override
-
-If base rules say "functions under 20 lines" but your team needs longer functions
-for specific cases, add a rule here to override it.
+# Example: Override function length limits
+functions:
+  max_lines:
+    enforcement: SHOULD
+    value: 80
+    good: |
+      def process_data(data):
+          # A longer function is acceptable when logic is cohesive
+          validate(data)
+          transform(data)
+          save(data)
+    bad: |
+      def do_everything():
+          # Avoid functions that do unrelated things
+          send_email()
+          update_database()
+          render_pdf()
 """
-    write_file_safe(team_dir / "example.md", sample_rule)
+    write_file_safe(team_dir / "example.yml", sample_rule)
 
 
 @app.command()
