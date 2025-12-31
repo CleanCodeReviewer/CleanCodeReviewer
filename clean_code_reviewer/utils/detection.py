@@ -80,6 +80,19 @@ def is_trae_installed() -> bool:
     return False
 
 
+def is_opencode_installed() -> bool:
+    """Check if OpenCode CLI is installed.
+
+    OpenCode is an open-source AI coding agent (sst/opencode).
+    https://opencode.ai
+
+    Only checks if 'opencode' command exists in PATH.
+    Global config (~/.config/opencode) is not checked because
+    project-level detection (.opencode/ or opencode.json) is what matters.
+    """
+    return shutil.which("opencode") is not None
+
+
 def project_uses_claude(project_path: Path) -> bool:
     """Check if project uses Claude Code (has .claude directory or CLAUDE.md file)."""
     return (project_path / ".claude").exists() or (project_path / "CLAUDE.md").exists()
@@ -100,6 +113,11 @@ def project_uses_trae(project_path: Path) -> bool:
     return (project_path / ".trae").exists()
 
 
+def project_uses_opencode(project_path: Path) -> bool:
+    """Check if project uses OpenCode (has .opencode directory or opencode.json)."""
+    return (project_path / ".opencode").exists() or (project_path / "opencode.json").exists()
+
+
 def get_project_targets(project_path: Path) -> list[str]:
     """Get list of AI coding assistants that should be configured for this project.
 
@@ -116,4 +134,6 @@ def get_project_targets(project_path: Path) -> list[str]:
         targets.append("cursor")
     if is_trae_installed() and project_uses_trae(project_path):
         targets.append("trae")
+    if is_opencode_installed() and project_uses_opencode(project_path):
+        targets.append("opencode")
     return targets

@@ -25,6 +25,7 @@ from clean_code_reviewer.utils.detection import (
     is_claude_code_installed,
     is_cursor_installed,
     is_gemini_cli_installed,
+    is_opencode_installed,
 )
 from clean_code_reviewer.utils.file_ops import ensure_directory, read_file_safe, write_file_safe
 from clean_code_reviewer.utils.logger import setup_logging
@@ -93,9 +94,57 @@ ccr review --staged            # Review staged only
 """
 
 
+def _get_opencode_plugin_content() -> str:
+    """Get the content for the OpenCode CCR review plugin."""
+    return '''// CCR (Clean Code Reviewer) plugin for OpenCode
+// Automatically reviews files after edits using CCR
+
+export const CCRReviewPlugin = async ({ $ }) => {
+  return {
+    event: async ({ event }) => {
+      if (event.type === "file.edited" && event.path) {
+        try {
+          await $`ccr review "${event.path}"`
+        } catch (e) {
+          // Review failed, continue anyway
+        }
+      }
+    }
+  }
+}
+'''
+
+
+def _install_opencode_hooks(path: Path) -> None:
+    """Install OpenCode plugin-based hooks for CCR.
+
+    OpenCode uses JS/TS plugins in .opencode/plugin/ directory.
+    """
+    plugin_dir = path / ".opencode" / "plugin"
+    plugin_path = plugin_dir / "ccr-review.js"
+
+    # Check if already installed
+    if plugin_path.exists():
+        content = read_file_safe(plugin_path)
+        if content and "CCRReviewPlugin" in content:
+            console.print("  [dim]-[/dim] opencode: plugin already installed")
+            return
+
+    # Create plugin directory and file
+    ensure_directory(plugin_dir)
+    write_file_safe(plugin_path, _get_opencode_plugin_content())
+    relative_path = plugin_path.relative_to(path) if path != Path(".") else plugin_path
+    console.print(f"  [green]✓[/green] opencode: installed plugin in {relative_path}")
+
+
 def _install_hooks_for_init(path: Path, target: str) -> None:
     """Install hooks for a specific target during init."""
     import json
+
+    # OpenCode uses plugin-based hooks
+    if target == "opencode":
+        _install_opencode_hooks(path)
+        return
 
     # Get settings path based on target
     if target == "gemini":
@@ -167,12 +216,18 @@ def _install_mcp_for_init(path: Path, target: str) -> None:
     - claude: .mcp.json in project root
     - trae: .mcp.json in project root
     - cursor: .cursor/mcp.json
+    - opencode: opencode.json in project root (different format)
     - gemini: not supported (no MCP)
     """
     import json
 
     # Gemini doesn't support MCP
     if target == "gemini":
+        return
+
+    # OpenCode uses a different MCP config format
+    if target == "opencode":
+        _install_opencode_mcp(path)
         return
 
     # Get MCP config path based on target
@@ -212,6 +267,47 @@ def _install_mcp_for_init(path: Path, target: str) -> None:
 
     relative_path = mcp_path.relative_to(path) if path != Path(".") else mcp_path
     console.print(f"  [green]✓[/green] {target}: configured MCP in {relative_path}")
+
+
+def _install_opencode_mcp(path: Path) -> None:
+    """Install MCP configuration for OpenCode.
+
+    OpenCode uses opencode.json with format:
+    {"mcp": {"server-name": {"type": "local", "command": ["cmd", "arg"]}}}
+    """
+    import json
+
+    mcp_path = path / "opencode.json"
+
+    # Load existing config
+    config: dict = {}
+    if mcp_path.exists():
+        content = read_file_safe(mcp_path)
+        if content:
+            try:
+                config = json.loads(content)
+            except json.JSONDecodeError:
+                pass
+
+    # Check if already configured
+    mcp_servers = config.get("mcp", {})
+    if "clean-code-reviewer" in mcp_servers:
+        console.print("  [dim]-[/dim] opencode: MCP already configured")
+        return
+
+    # Add CCR MCP server (OpenCode format)
+    if "mcp" not in config:
+        config["mcp"] = {}
+
+    config["mcp"]["clean-code-reviewer"] = {
+        "type": "local",
+        "command": ["ccr", "mcp"]
+    }
+
+    # Save
+    write_file_safe(mcp_path, json.dumps(config, indent=2) + "\n")
+    relative_path = mcp_path.relative_to(path) if path != Path(".") else mcp_path
+    console.print(f"  [green]✓[/green] opencode: configured MCP in {relative_path}")
 
 
 @app.command()
@@ -328,9 +424,9 @@ def init(
     detected_targets = get_project_targets(path)
 
     # Targets that support hooks (Trae does not support hooks yet)
-    hook_targets = [t for t in detected_targets if t != "trae"]
+    hook_targets = [t for t in detected_targets if t not in ("trae",)]
     # Targets that support MCP (all except gemini)
-    mcp_targets = [t for t in detected_targets if t in ("claude", "cursor", "trae")]
+    mcp_targets = [t for t in detected_targets if t in ("claude", "cursor", "trae", "opencode")]
 
     if detected_targets:
         if hook_targets:
@@ -1510,13 +1606,27 @@ def hooks_status() -> None:
 
         table.add_row(t, str(settings_path), status)
 
+    # Show OpenCode plugin status (uses plugin, not settings.json)
+    opencode_plugin = Path(".opencode") / "plugin" / "ccr-review.js"
+    if opencode_plugin.exists():
+        content = read_file_safe(opencode_plugin)
+        if content and "CCRReviewPlugin" in content:
+            table.add_row("opencode", str(opencode_plugin), "[green]Installed[/green]")
+        else:
+            table.add_row("opencode", str(opencode_plugin), "[yellow]Not installed[/yellow]")
+    else:
+        table.add_row("opencode", str(opencode_plugin), "[dim]No plugin[/dim]")
+
     console.print(table)
 
     # Show detection status
     console.print("\n[bold]Detection:[/bold]")
-    console.print(f"  Claude Code: {'[green]found[/green]' if is_claude_code_installed() else '[dim]not found[/dim]'}")
-    console.print(f"  Gemini CLI:  {'[green]found[/green]' if is_gemini_cli_installed() else '[dim]not found[/dim]'}")
-    console.print(f"  Cursor IDE:  {'[green]found[/green]' if is_cursor_installed() else '[dim]not found[/dim]'}")
+    found = "[green]found[/green]"
+    not_found = "[dim]not found[/dim]"
+    console.print(f"  Claude Code: {found if is_claude_code_installed() else not_found}")
+    console.print(f"  Gemini CLI:  {found if is_gemini_cli_installed() else not_found}")
+    console.print(f"  Cursor IDE:  {found if is_cursor_installed() else not_found}")
+    console.print(f"  OpenCode:    {found if is_opencode_installed() else not_found}")
 
 
 @hooks_app.command(name="handle", hidden=True)
