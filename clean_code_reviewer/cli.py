@@ -395,49 +395,48 @@ def remove(
         raise typer.Exit(1)
 
 
-@app.command()
-def update(
+# Create update subcommand group
+update_app = typer.Typer(help="Update rules or agent files", invoke_without_command=True)
+app.add_typer(update_app, name="update")
+
+
+@update_app.callback()
+def update_callback(
+    ctx: typer.Context,
     path: Annotated[
         Path,
         typer.Argument(help="Project path"),
     ] = Path("."),
-    rules: Annotated[
-        bool,
-        typer.Option("--rules", "-r", help="Update rules from remote"),
-    ] = False,
-    prompts: Annotated[
-        bool,
-        typer.Option("--prompts", "-p", help="Update prompt files (CLAUDE.md, .cursorrules)"),
-    ] = False,
     rules_dir: Annotated[
         Path,
         typer.Option("--rules-dir", "-d", help="Rules directory"),
     ] = Path(".cleancoderules"),
 ) -> None:
-    """Update rules and/or prompt files.
+    """Update rules and agent files.
 
     Examples:
-        ccr update            # Update both rules and prompts
-        ccr update --rules    # Only update rules from remote
-        ccr update --prompts  # Only update prompt files
+        ccr update              # Update both rules and agent files
+        ccr update rules        # Only update rules from remote
+        ccr update agent        # Only update agent files
     """
-    # If neither flag is set, update both
-    update_rules = rules or not prompts
-    update_prompts = prompts or not rules
+    # Store path and rules_dir in context for subcommands
+    ctx.ensure_object(dict)
+    ctx.obj["path"] = path
+    ctx.obj["rules_dir"] = rules_dir
 
-    rules_path = path / rules_dir
+    # If no subcommand, run both updates
+    if ctx.invoked_subcommand is None:
+        rules_path = path / rules_dir
 
-    if not rules_path.exists():
-        console.print(f"[red]Rules directory not found: {rules_path}[/red]")
-        console.print("Run 'ccr init' first to initialize the project.")
-        raise typer.Exit(1)
+        if not rules_path.exists():
+            console.print(f"[red]Rules directory not found: {rules_path}[/red]")
+            console.print("Run 'ccr init' first to initialize the project.")
+            raise typer.Exit(1)
 
-    # Update rules from remote
-    if update_rules:
+        # Update rules
         console.print("[bold]Updating rules from remote...[/bold]")
         community_dir = rules_path / "community"
 
-        # Re-download base.yml
         with RulesManager() as manager:
             result = manager.download_rule("base", rules_path)
             if result:
@@ -445,28 +444,25 @@ def update(
             else:
                 console.print(f"  [yellow]![/yellow] Could not update base.yml")
 
-            # Find and update community rules
             if community_dir.exists():
                 for namespace_dir in community_dir.iterdir():
                     if namespace_dir.is_dir():
                         namespace = namespace_dir.name
                         for rule_file in namespace_dir.glob("*.yml"):
                             rule_name = rule_file.stem
-                            rule_path = f"{namespace}/{rule_name}"
-                            result = manager.download_rule(rule_path, community_dir)
+                            rule_path_str = f"{namespace}/{rule_name}"
+                            result = manager.download_rule(rule_path_str, community_dir)
                             if result:
-                                console.print(f"  [green]✓[/green] Updated {rule_path}")
+                                console.print(f"  [green]✓[/green] Updated {rule_path_str}")
                             else:
-                                console.print(f"  [yellow]![/yellow] Could not update {rule_path}")
+                                console.print(f"  [yellow]![/yellow] Could not update {rule_path_str}")
 
-    # Update prompt files
-    if update_prompts:
-        console.print("\n[bold]Updating prompt files...[/bold]")
+        # Update agent files
+        console.print("\n[bold]Updating agent files...[/bold]")
         instructions = _get_prompt_instructions()
-        # Match any heading containing "Clean Code Reviewer" and everything until next heading
         pattern = r"##[^\n]*Clean Code Reviewer[^\n]*\n.*?(?=\n## |\n# |\Z)"
 
-        def update_prompt_file(file_path: Path, name: str) -> None:
+        def update_file(file_path: Path, name: str) -> None:
             if not file_path.exists():
                 return
             content = read_file_safe(file_path) or ""
@@ -480,11 +476,115 @@ def update(
         claude_path = path / "CLAUDE.md"
         cursor_path = path / ".cursorrules"
 
-        update_prompt_file(claude_path, "CLAUDE.md")
-        update_prompt_file(cursor_path, ".cursorrules")
+        update_file(claude_path, "CLAUDE.md")
+        update_file(cursor_path, ".cursorrules")
 
         if not claude_path.exists() and not cursor_path.exists():
-            console.print("  [yellow]No prompt files found (CLAUDE.md or .cursorrules)[/yellow]")
+            console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
+
+        console.print("\n[bold green]Update complete![/bold green]")
+
+
+@update_app.command(name="rules")
+def update_rules(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Project path"),
+    ] = Path("."),
+    rules_dir: Annotated[
+        Path,
+        typer.Option("--rules-dir", "-d", help="Rules directory"),
+    ] = Path(".cleancoderules"),
+) -> None:
+    """Update rules from remote.
+
+    Examples:
+        ccr update rules           # Update all rules from remote
+        ccr update rules ./myproj  # Update rules for a specific project
+    """
+    rules_path = path / rules_dir
+
+    if not rules_path.exists():
+        console.print(f"[red]Rules directory not found: {rules_path}[/red]")
+        console.print("Run 'ccr init' first to initialize the project.")
+        raise typer.Exit(1)
+
+    console.print("[bold]Updating rules from remote...[/bold]")
+    community_dir = rules_path / "community"
+
+    # Re-download base.yml
+    with RulesManager() as manager:
+        result = manager.download_rule("base", rules_path)
+        if result:
+            console.print(f"  [green]✓[/green] Updated base.yml")
+        else:
+            console.print(f"  [yellow]![/yellow] Could not update base.yml")
+
+        # Find and update community rules
+        if community_dir.exists():
+            for namespace_dir in community_dir.iterdir():
+                if namespace_dir.is_dir():
+                    namespace = namespace_dir.name
+                    for rule_file in namespace_dir.glob("*.yml"):
+                        rule_name = rule_file.stem
+                        rule_path = f"{namespace}/{rule_name}"
+                        result = manager.download_rule(rule_path, community_dir)
+                        if result:
+                            console.print(f"  [green]✓[/green] Updated {rule_path}")
+                        else:
+                            console.print(f"  [yellow]![/yellow] Could not update {rule_path}")
+
+    console.print("\n[bold green]Update complete![/bold green]")
+
+
+@update_app.command(name="agent")
+def update_agent(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Project path"),
+    ] = Path("."),
+    rules_dir: Annotated[
+        Path,
+        typer.Option("--rules-dir", "-d", help="Rules directory"),
+    ] = Path(".cleancoderules"),
+) -> None:
+    """Update agent files (CLAUDE.md, .cursorrules).
+
+    Examples:
+        ccr update agent           # Update agent files in current directory
+        ccr update agent ./myproj  # Update agent files for a specific project
+    """
+    rules_path = path / rules_dir
+
+    if not rules_path.exists():
+        console.print(f"[red]Rules directory not found: {rules_path}[/red]")
+        console.print("Run 'ccr init' first to initialize the project.")
+        raise typer.Exit(1)
+
+    console.print("[bold]Updating agent files...[/bold]")
+    instructions = _get_prompt_instructions()
+    # Match any heading containing "Clean Code Reviewer" and everything until next heading
+    pattern = r"##[^\n]*Clean Code Reviewer[^\n]*\n.*?(?=\n## |\n# |\Z)"
+
+    def update_agent_file(file_path: Path, name: str) -> None:
+        if not file_path.exists():
+            return
+        content = read_file_safe(file_path) or ""
+        if "Clean Code Reviewer" not in content:
+            console.print(f"  [dim]-[/dim] {name} exists but has no CCR section")
+            return
+        new_content = re.sub(pattern, instructions.strip(), content, flags=re.DOTALL)
+        write_file_safe(file_path, new_content)
+        console.print(f"  [green]✓[/green] Updated {name}")
+
+    claude_path = path / "CLAUDE.md"
+    cursor_path = path / ".cursorrules"
+
+    update_agent_file(claude_path, "CLAUDE.md")
+    update_agent_file(cursor_path, ".cursorrules")
+
+    if not claude_path.exists() and not cursor_path.exists():
+        console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
 
     console.print("\n[bold green]Update complete![/bold green]")
 
