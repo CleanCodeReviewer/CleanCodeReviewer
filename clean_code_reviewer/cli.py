@@ -474,35 +474,25 @@ def update(
     if update_agents:
         console.print("\n[bold]Updating agent instruction files...[/bold]")
         instructions = _get_agent_instructions()
-        pattern = r"## Clean Code Reviewer.*?(?=\n## |\n# |\Z)"
+        # Match any heading containing "Clean Code Reviewer" and everything until next heading
+        pattern = r"##[^\n]*Clean Code Reviewer[^\n]*\n.*?(?=\n## |\n# |\Z)"
 
-        # Update CLAUDE.md
+        def update_agent_file(file_path: Path, name: str) -> None:
+            if not file_path.exists():
+                return
+            content = read_file_safe(file_path) or ""
+            if "Clean Code Reviewer" not in content:
+                console.print(f"  [dim]-[/dim] {name} exists but has no CCR section")
+                return
+            new_content = re.sub(pattern, instructions.strip(), content, flags=re.DOTALL)
+            write_file_safe(file_path, new_content)
+            console.print(f"  [green]✓[/green] Updated {name}")
+
         claude_path = path / "CLAUDE.md"
-        if claude_path.exists():
-            content = read_file_safe(claude_path) or ""
-            if "Clean Code Reviewer" in content:
-                new_content = re.sub(pattern, instructions.strip(), content, flags=re.DOTALL)
-                if new_content != content:
-                    write_file_safe(claude_path, new_content)
-                    console.print(f"  [green]✓[/green] Updated CLAUDE.md")
-                else:
-                    console.print(f"  [dim]-[/dim] CLAUDE.md already up to date")
-            else:
-                console.print(f"  [dim]-[/dim] CLAUDE.md exists but has no CCR section")
-
-        # Update .cursorrules
         cursor_path = path / ".cursorrules"
-        if cursor_path.exists():
-            content = read_file_safe(cursor_path) or ""
-            if "Clean Code Reviewer" in content:
-                new_content = re.sub(pattern, instructions.strip(), content, flags=re.DOTALL)
-                if new_content != content:
-                    write_file_safe(cursor_path, new_content)
-                    console.print(f"  [green]✓[/green] Updated .cursorrules")
-                else:
-                    console.print(f"  [dim]-[/dim] .cursorrules already up to date")
-            else:
-                console.print(f"  [dim]-[/dim] .cursorrules exists but has no CCR section")
+
+        update_agent_file(claude_path, "CLAUDE.md")
+        update_agent_file(cursor_path, ".cursorrules")
 
         if not claude_path.exists() and not cursor_path.exists():
             console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
