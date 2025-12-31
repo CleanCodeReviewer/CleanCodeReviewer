@@ -146,6 +146,60 @@ def _install_hooks_for_init(path: Path, target: str) -> None:
     console.print(f"  [green]✓[/green] {target}: installed hooks in {settings_path.relative_to(path) if path != Path('.') else settings_path}")
 
 
+def _install_mcp_for_init(path: Path, target: str) -> None:
+    """Install MCP server configuration for a specific target during init.
+
+    MCP (Model Context Protocol) allows on-demand code review requests.
+    - claude: .mcp.json in project root
+    - trae: .mcp.json in project root
+    - cursor: .cursor/mcp.json
+    - gemini: not supported (no MCP)
+    """
+    import json
+
+    # Gemini doesn't support MCP
+    if target == "gemini":
+        return
+
+    # Get MCP config path based on target
+    if target == "cursor":
+        mcp_path = path / ".cursor" / "mcp.json"
+    else:  # claude, trae
+        mcp_path = path / ".mcp.json"
+
+    # Load existing MCP config
+    mcp_config: dict = {}
+    if mcp_path.exists():
+        content = read_file_safe(mcp_path)
+        if content:
+            try:
+                mcp_config = json.loads(content)
+            except json.JSONDecodeError:
+                pass
+
+    # Check if already configured
+    servers = mcp_config.get("mcpServers", {})
+    if "clean-code-reviewer" in servers:
+        console.print(f"  [dim]-[/dim] {target}: MCP already configured")
+        return
+
+    # Add CCR MCP server
+    if "mcpServers" not in mcp_config:
+        mcp_config["mcpServers"] = {}
+
+    mcp_config["mcpServers"]["clean-code-reviewer"] = {
+        "command": "ccr",
+        "args": ["mcp"]
+    }
+
+    # Save
+    ensure_directory(mcp_path.parent)
+    write_file_safe(mcp_path, json.dumps(mcp_config, indent=2) + "\n")
+
+    relative_path = mcp_path.relative_to(path) if path != Path(".") else mcp_path
+    console.print(f"  [green]✓[/green] {target}: configured MCP in {relative_path}")
+
+
 @app.command()
 def init(
     path: Annotated[
@@ -256,20 +310,38 @@ def init(
             write_file_safe(gitignore_path, gitignore_content + separator + ".cleancoderules\n")
             console.print(f"  [green]✓[/green] Added .cleancoderules to .gitignore")
 
-    # Install hooks for AI coding assistants used in this project
+    # Install hooks and MCP for AI coding assistants used in this project
     detected_targets = get_project_targets(path)
 
+    # Targets that support hooks (Trae does not support hooks yet)
+    hook_targets = [t for t in detected_targets if t != "trae"]
+    # Targets that support MCP (all except gemini)
+    mcp_targets = [t for t in detected_targets if t in ("claude", "cursor", "trae")]
+
     if detected_targets:
-        console.print("\n[bold]Installing hooks...[/bold]")
-        for target in detected_targets:
-            _install_hooks_for_init(path, target)
+        if hook_targets:
+            console.print("\n[bold]Installing hooks...[/bold]")
+            for target in hook_targets:
+                _install_hooks_for_init(path, target)
+
+        if mcp_targets:
+            console.print("\n[bold]Configuring MCP servers...[/bold]")
+            for target in mcp_targets:
+                _install_mcp_for_init(path, target)
+
+        # Note about Trae not supporting hooks
+        if "trae" in detected_targets:
+            console.print("\n[yellow]Note:[/yellow] Trae does not support hooks yet, MCP only.")
     else:
-        console.print("\n[dim]Skipping hooks (no AI coding assistants detected)[/dim]")
+        console.print("\n[dim]Skipping hooks/MCP (no AI coding assistants detected)[/dim]")
 
     # Summary
     console.print("\n[bold green]Initialization complete![/bold green]")
     if detected_targets:
-        console.print(f"\nCCR will automatically review code when {', '.join(detected_targets)} edits files.")
+        if hook_targets:
+            console.print(f"\nCCR will automatically review code when {', '.join(hook_targets)} edits files.")
+        if mcp_targets:
+            console.print(f"You can also ask for explicit reviews via MCP ({', '.join(mcp_targets)}).")
     console.print("\nNext steps:")
     console.print("  1. Review rules in .cleancoderules/")
     console.print("  2. Add more rules: [cyan]ccr add <namespace/rule>[/cyan]")

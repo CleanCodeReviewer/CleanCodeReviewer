@@ -60,6 +60,26 @@ def is_cursor_installed() -> bool:
     return False
 
 
+def is_trae_installed() -> bool:
+    """Check if Trae IDE is installed."""
+    system = platform.system()
+
+    if system == "Darwin":  # macOS
+        if Path("/Applications/Trae.app").exists():
+            return True
+    elif system == "Windows":
+        # Common Windows install path
+        local_app = Path.home() / "AppData/Local/Programs/trae"
+        if local_app.exists():
+            return True
+    elif system == "Linux":
+        # Check if trae command exists
+        if shutil.which("trae"):
+            return True
+
+    return False
+
+
 def project_uses_claude(project_path: Path) -> bool:
     """Check if project uses Claude Code (has .claude directory or CLAUDE.md file)."""
     return (project_path / ".claude").exists() or (project_path / "CLAUDE.md").exists()
@@ -73,6 +93,11 @@ def project_uses_gemini(project_path: Path) -> bool:
 def project_uses_cursor(project_path: Path) -> bool:
     """Check if project uses Cursor (has .cursor directory or .cursorrules file)."""
     return (project_path / ".cursor").exists() or (project_path / ".cursorrules").exists()
+
+
+def project_uses_trae(project_path: Path) -> bool:
+    """Check if project uses Trae (has .trae directory)."""
+    return (project_path / ".trae").exists()
 
 
 def get_project_targets(project_path: Path) -> list[str]:
@@ -89,4 +114,6 @@ def get_project_targets(project_path: Path) -> list[str]:
         targets.append("gemini")
     if is_cursor_installed() and project_uses_cursor(project_path):
         targets.append("cursor")
+    if is_trae_installed() and project_uses_trae(project_path):
+        targets.append("trae")
     return targets
