@@ -27,16 +27,32 @@ PROMPT_OPTIONS = [
 
 def _is_claude_code_installed() -> bool:
     """Check if Claude Code CLI is installed."""
-    # Check if 'claude' command exists in PATH
     if shutil.which("claude"):
         return True
-
-    # Check if ~/.claude directory exists (Claude Code config dir)
     claude_dir = Path.home() / ".claude"
     if claude_dir.exists():
         return True
-
     return False
+
+
+def _is_gemini_cli_installed() -> bool:
+    """Check if Gemini CLI is installed."""
+    if shutil.which("gemini"):
+        return True
+    gemini_dir = Path.home() / ".gemini"
+    if gemini_dir.exists():
+        return True
+    return False
+
+
+def _get_detected_targets() -> list[str]:
+    """Get list of detected AI coding assistants."""
+    targets = []
+    if _is_claude_code_installed():
+        targets.append("Claude Code")
+    if _is_gemini_cli_installed():
+        targets.append("Gemini CLI")
+    return targets
 
 
 @dataclass
@@ -131,14 +147,15 @@ class InitApp(App[InitResult]):
             with Container(id="dialog"):
                 yield Static("CCR Initialization", classes="title")
 
-                # Hook info section (only if Claude Code is installed)
-                if _is_claude_code_installed():
-                    yield Static("Claude Code Hook", classes="section-title")
-                    yield Static(
-                        "✓ Will install hook in .claude/settings.json\n"
-                        "  CCR runs automatically after Edit/Write",
-                        classes="hook-info",
-                    )
+                # Hook info section (show detected AI assistants)
+                detected = _get_detected_targets()
+                if detected:
+                    yield Static("Hooks", classes="section-title")
+                    hook_info = "✓ Will install hooks for:\n"
+                    for target in detected:
+                        hook_info += f"  • {target}\n"
+                    hook_info += "  CCR runs automatically after file edits"
+                    yield Static(hook_info, classes="hook-info")
 
                 # Prompt files section
                 yield Static("Prompt Files (optional)", classes="section-title")

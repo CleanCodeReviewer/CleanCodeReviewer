@@ -83,30 +83,53 @@ def _is_claude_code_installed() -> bool:
     return False
 
 
+def _is_gemini_cli_installed() -> bool:
+    """Check if Gemini CLI is installed."""
+    import shutil
+
+    # Check if 'gemini' command exists in PATH
+    if shutil.which("gemini"):
+        return True
+
+    # Check if ~/.gemini directory exists (Gemini CLI config dir)
+    gemini_dir = Path.home() / ".gemini"
+    if gemini_dir.exists():
+        return True
+
+    return False
+
+
 def _get_prompt_instructions() -> str:
     """Get the CCR instructions for prompt files."""
     return """## Clean Code Reviewer
 
 This project uses Clean Code Reviewer (CCR) for code quality enforcement.
 
-### Rule Locations
+### Rules
 - `.cleancoderules/team/` - Team rules (highest priority)
-- `.cleancoderules/community/` - Community rules (e.g., Google, Airbnb)
+- `.cleancoderules/community/` - Community rules
 - `.cleancoderules/base.yml` - Base principles
 
-### Usage
-- `ccr review <file>` - Review a file against rules
-- `ccr list` - List installed rules
-
-If CCR hooks are installed, reviews run automatically after code changes.
+### Manual Review
+```bash
+ccr review <file>              # Review specific file
+ccr review src/                # Review directory
+ccr review -p "**/*.py"        # Review by pattern
+ccr review --changed           # Review git changes
+ccr review --staged            # Review staged only
+```
 """
 
 
-def _install_hooks_for_init(path: Path) -> None:
-    """Install Claude Code hooks during init."""
+def _install_hooks_for_init(path: Path, target: str) -> None:
+    """Install hooks for a specific target during init."""
     import json
 
-    settings_path = path / ".claude" / "settings.json"
+    # Get settings path based on target
+    if target == "gemini":
+        settings_path = path / ".gemini" / "settings.json"
+    else:  # claude
+        settings_path = path / ".claude" / "settings.json"
 
     # Load existing settings
     settings: dict = {}
@@ -118,37 +141,37 @@ def _install_hooks_for_init(path: Path) -> None:
             except json.JSONDecodeError:
                 pass
 
+    # Get hook configs for this target
+    hook_configs = _get_ccr_hook_configs(target)
+
     # Check if already installed
-    hooks = settings.get("hooks", {})
-    post_tool_use = hooks.get("PostToolUse", [])
     already_installed = False
-    for hook in post_tool_use:
-        for h in hook.get("hooks", []):
-            if h.get("type") == "command":
-                cmd = h.get("command", "")
-                if "ccr hooks handle" in cmd:
+    hooks = settings.get("hooks", {})
+    for event_name in hook_configs:
+        event_hooks = hooks.get(event_name, [])
+        for hook in event_hooks:
+            for h in hook.get("hooks", []):
+                if h.get("type") == "command" and "ccr hooks handle" in h.get("command", ""):
                     already_installed = True
                     break
 
     if already_installed:
-        console.print(f"  [dim]-[/dim] Hooks already installed")
+        console.print(f"  [dim]-[/dim] {target}: hooks already installed")
         return
 
-    # Add hook
+    # Add hooks
     if "hooks" not in settings:
         settings["hooks"] = {}
-    if "PostToolUse" not in settings["hooks"]:
-        settings["hooks"]["PostToolUse"] = []
 
-    settings["hooks"]["PostToolUse"].append({
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [{"type": "command", "command": "ccr hooks handle"}],
-    })
+    for event_name, hook_config in hook_configs.items():
+        if event_name not in settings["hooks"]:
+            settings["hooks"][event_name] = []
+        settings["hooks"][event_name].append(hook_config)
 
     # Save
     ensure_directory(settings_path.parent)
     write_file_safe(settings_path, json.dumps(settings, indent=2) + "\n")
-    console.print(f"  [green]✓[/green] Installed hooks in .claude/settings.json")
+    console.print(f"  [green]✓[/green] {target}: installed hooks in {settings_path.relative_to(path) if path != Path('.') else settings_path}")
 
 
 @app.command()
@@ -261,17 +284,24 @@ def init(
             write_file_safe(gitignore_path, gitignore_content + separator + ".cleancoderules\n")
             console.print(f"  [green]✓[/green] Added .cleancoderules to .gitignore")
 
-    # Install Claude Code hooks (only if Claude Code is installed)
+    # Install hooks for detected AI coding assistants
+    detected_targets = []
     if _is_claude_code_installed():
-        console.print("\n[bold]Installing Claude Code hooks...[/bold]")
-        _install_hooks_for_init(path)
+        detected_targets.append("claude")
+    if _is_gemini_cli_installed():
+        detected_targets.append("gemini")
+
+    if detected_targets:
+        console.print("\n[bold]Installing hooks...[/bold]")
+        for target in detected_targets:
+            _install_hooks_for_init(path, target)
     else:
-        console.print("\n[dim]Skipping hooks (Claude Code not detected)[/dim]")
+        console.print("\n[dim]Skipping hooks (no AI coding assistants detected)[/dim]")
 
     # Summary
     console.print("\n[bold green]Initialization complete![/bold green]")
-    if _is_claude_code_installed():
-        console.print("\nCCR will automatically review code when Claude Code edits files.")
+    if detected_targets:
+        console.print(f"\nCCR will automatically review code when {', '.join(detected_targets)} edits files.")
     console.print("\nNext steps:")
     console.print("  1. Review rules in .cleancoderules/")
     console.print("  2. Add more rules: [cyan]ccr add <namespace/rule>[/cyan]")
@@ -552,6 +582,24 @@ def update_callback(
         if not claude_path.exists() and not cursor_path.exists():
             console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
 
+        # Update hooks
+        detected_targets = []
+        if _is_claude_code_installed():
+            detected_targets.append("claude")
+        if _is_gemini_cli_installed():
+            detected_targets.append("gemini")
+
+        if detected_targets:
+            console.print("\n[bold]Updating hooks...[/bold]")
+            for t in detected_targets:
+                settings_path = _get_settings_path(t, "project")
+                settings = _load_settings(settings_path)
+                if _has_ccr_hook(settings, t):
+                    settings = _remove_ccr_hook(settings, t)
+                settings = _add_ccr_hook(settings, t)
+                _save_settings(settings_path, settings)
+                console.print(f"  [green]✓[/green] {t}: updated hooks")
+
         console.print("\n[bold green]Update complete![/bold green]")
 
 
@@ -657,6 +705,67 @@ def update_agent(
         console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
 
     console.print("\n[bold green]Update complete![/bold green]")
+
+
+@update_app.command(name="hooks")
+def update_hooks(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Project path"),
+    ] = Path("."),
+    global_scope: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Install globally (user-level)"),
+    ] = False,
+    target: Annotated[
+        str,
+        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', or 'all'"),
+    ] = "all",
+) -> None:
+    """Update/reinstall hooks for AI coding assistants.
+
+    This will remove existing CCR hooks and reinstall them with the latest
+    configuration. Useful after CCR updates.
+
+    Examples:
+        ccr update hooks                 # Update hooks for detected CLIs
+        ccr update hooks -t claude       # Update Claude Code hooks only
+        ccr update hooks -g              # Update global hooks
+    """
+    scope = "user" if global_scope else "project"
+
+    # Determine targets
+    if target == "all":
+        targets = []
+        if _is_claude_code_installed():
+            targets.append("claude")
+        if _is_gemini_cli_installed():
+            targets.append("gemini")
+        if not targets:
+            console.print("[yellow]No AI coding assistants detected[/yellow]")
+            raise typer.Exit(1)
+    elif target in HOOK_TARGETS:
+        targets = [target]
+    else:
+        console.print(f"[red]Invalid target: {target}[/red]")
+        raise typer.Exit(1)
+
+    console.print("[bold]Updating hooks...[/bold]")
+
+    for t in targets:
+        settings_path = _get_settings_path(t, scope)
+        settings = _load_settings(settings_path)
+
+        # Remove existing CCR hooks
+        if _has_ccr_hook(settings, t):
+            settings = _remove_ccr_hook(settings, t)
+
+        # Add fresh hooks
+        settings = _add_ccr_hook(settings, t)
+        _save_settings(settings_path, settings)
+        console.print(f"  [green]✓[/green] {t}: updated hooks in {settings_path}")
+
+    console.print("\n[bold green]Hooks updated![/bold green]")
 
 
 @app.command(name="list")
@@ -1090,29 +1199,60 @@ def order(
 
 
 # Create hooks subcommand group
-hooks_app = typer.Typer(help="Manage Claude Code hooks for automatic code review")
+hooks_app = typer.Typer(help="Manage AI coding assistant hooks for automatic code review")
 app.add_typer(hooks_app, name="hooks")
 
-
-def _get_ccr_hook_config() -> dict:
-    """Get the CCR hook configuration for Claude Code."""
-    return {
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [
-            {
-                "type": "command",
-                "command": "ccr hooks handle",
-            }
-        ],
-    }
+# Supported targets
+HOOK_TARGETS = ["claude", "gemini"]
 
 
-def _get_settings_path(scope: str) -> Path:
-    """Get the settings file path for the given scope."""
-    if scope == "user":
-        return Path.home() / ".claude" / "settings.json"
-    else:  # project
-        return Path(".claude") / "settings.json"
+def _get_ccr_hook_configs(target: str) -> dict:
+    """Get the CCR hook configurations for the target CLI.
+
+    Returns a dict with hook event names as keys and hook configs as values.
+    Before hooks: show rules to follow during coding
+    After hooks: review code and suggest refactoring
+    """
+    if target == "gemini":
+        # Gemini CLI: BeforeTool and AfterTool
+        matcher = "edit_file|write_file"
+        return {
+            "BeforeTool": {
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": "ccr hooks handle --event before"}],
+            },
+            "AfterTool": {
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": "ccr hooks handle --event after"}],
+            },
+        }
+    else:  # claude
+        # Claude Code: PreToolUse and PostToolUse
+        matcher = "Edit|Write|NotebookEdit"
+        return {
+            "PreToolUse": {
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": "ccr hooks handle --event before"}],
+            },
+            "PostToolUse": {
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": "ccr hooks handle --event after"}],
+            },
+        }
+
+
+def _get_settings_path(target: str, scope: str) -> Path:
+    """Get the settings file path for the given target and scope."""
+    if target == "gemini":
+        if scope == "user":
+            return Path.home() / ".gemini" / "settings.json"
+        else:  # project
+            return Path(".gemini") / "settings.json"
+    else:  # claude
+        if scope == "user":
+            return Path.home() / ".claude" / "settings.json"
+        else:  # project
+            return Path(".claude") / "settings.json"
 
 
 def _load_settings(path: Path) -> dict:
@@ -1138,32 +1278,7 @@ def _save_settings(path: Path, settings: dict) -> None:
     write_file_safe(path, json.dumps(settings, indent=2) + "\n")
 
 
-def _has_ccr_hook(settings: dict) -> bool:
-    """Check if CCR hook is already installed."""
-    hooks = settings.get("hooks", {})
-    post_tool_use = hooks.get("PostToolUse", [])
-    for hook in post_tool_use:
-        hook_list = hook.get("hooks", [])
-        for h in hook_list:
-            if h.get("type") == "command":
-                cmd = h.get("command", "")
-                if "ccr hooks handle" in cmd or "ccr review" in cmd:
-                    return True
-    return False
-
-
-def _add_ccr_hook(settings: dict) -> dict:
-    """Add CCR hook to settings."""
-    if "hooks" not in settings:
-        settings["hooks"] = {}
-    if "PostToolUse" not in settings["hooks"]:
-        settings["hooks"]["PostToolUse"] = []
-
-    settings["hooks"]["PostToolUse"].append(_get_ccr_hook_config())
-    return settings
-
-
-def _is_ccr_hook(hook: dict) -> bool:
+def _is_ccr_hook_entry(hook: dict) -> bool:
     """Check if a hook entry is a CCR hook."""
     for h in hook.get("hooks", []):
         if h.get("type") == "command":
@@ -1173,96 +1288,169 @@ def _is_ccr_hook(hook: dict) -> bool:
     return False
 
 
-def _remove_ccr_hook(settings: dict) -> dict:
-    """Remove CCR hook from settings."""
+def _has_ccr_hook(settings: dict, target: str) -> bool:
+    """Check if CCR hook is already installed for target."""
+    hooks = settings.get("hooks", {})
+    hook_configs = _get_ccr_hook_configs(target)
+
+    for event_name in hook_configs:
+        event_hooks = hooks.get(event_name, [])
+        for hook in event_hooks:
+            if _is_ccr_hook_entry(hook):
+                return True
+    return False
+
+
+def _add_ccr_hook(settings: dict, target: str) -> dict:
+    """Add CCR hooks to settings for target."""
+    if "hooks" not in settings:
+        settings["hooks"] = {}
+
+    hook_configs = _get_ccr_hook_configs(target)
+
+    for event_name, hook_config in hook_configs.items():
+        if event_name not in settings["hooks"]:
+            settings["hooks"][event_name] = []
+        # Check if already exists
+        already_exists = any(
+            _is_ccr_hook_entry(h) for h in settings["hooks"][event_name]
+        )
+        if not already_exists:
+            settings["hooks"][event_name].append(hook_config)
+
+    return settings
+
+
+def _remove_ccr_hook(settings: dict, target: str) -> dict:
+    """Remove CCR hooks from settings for target."""
     if "hooks" not in settings:
         return settings
-    if "PostToolUse" not in settings["hooks"]:
-        return settings
 
-    # Filter out CCR hooks
-    settings["hooks"]["PostToolUse"] = [
-        hook
-        for hook in settings["hooks"]["PostToolUse"]
-        if not _is_ccr_hook(hook)
-    ]
+    hook_configs = _get_ccr_hook_configs(target)
 
-    # Clean up empty structures
-    if not settings["hooks"]["PostToolUse"]:
-        del settings["hooks"]["PostToolUse"]
+    for event_name in hook_configs:
+        if event_name not in settings["hooks"]:
+            continue
+
+        # Filter out CCR hooks
+        settings["hooks"][event_name] = [
+            hook
+            for hook in settings["hooks"][event_name]
+            if not _is_ccr_hook_entry(hook)
+        ]
+
+        # Clean up empty event
+        if not settings["hooks"][event_name]:
+            del settings["hooks"][event_name]
+
+    # Clean up empty hooks
     if not settings["hooks"]:
         del settings["hooks"]
 
     return settings
 
 
+def _get_detected_targets() -> list[str]:
+    """Get list of detected AI coding assistants."""
+    targets = []
+    if _is_claude_code_installed():
+        targets.append("claude")
+    if _is_gemini_cli_installed():
+        targets.append("gemini")
+    return targets
+
+
 @hooks_app.command(name="install")
 def hooks_install(
-    scope: Annotated[
+    global_scope: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Install globally (user-level)"),
+    ] = False,
+    target: Annotated[
         str,
-        typer.Option("--scope", "-s", help="Scope: 'user' (~/.claude) or 'project' (.claude)"),
-    ] = "project",
+        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', or 'all'"),
+    ] = "all",
 ) -> None:
-    """Install Claude Code hooks for automatic code review.
+    """Install hooks for automatic code review.
 
-    After installation, CCR will automatically review files when Claude Code
-    uses the Edit, Write, or NotebookEdit tools.
+    Installs hooks for Claude Code and/or Gemini CLI.
 
     Examples:
-        ccr hooks install              # Install for current project
-        ccr hooks install -s user      # Install globally for all projects
+        ccr hooks install                    # Install for detected CLIs
+        ccr hooks install -t claude          # Install for Claude Code only
+        ccr hooks install -t gemini          # Install for Gemini CLI only
+        ccr hooks install -g                 # Install globally
     """
-    if scope not in ("user", "project"):
-        console.print(f"[red]Invalid scope: {scope}[/red]")
-        console.print("Use 'user' or 'project'")
+    scope = "user" if global_scope else "project"
+
+    # Determine targets
+    if target == "all":
+        targets = _get_detected_targets()
+        if not targets:
+            console.print("[yellow]No AI coding assistants detected[/yellow]")
+            console.print("Install Claude Code or Gemini CLI first")
+            raise typer.Exit(1)
+    elif target in HOOK_TARGETS:
+        targets = [target]
+    else:
+        console.print(f"[red]Invalid target: {target}[/red]")
+        console.print(f"Use: {', '.join(HOOK_TARGETS)} or 'all'")
         raise typer.Exit(1)
 
-    settings_path = _get_settings_path(scope)
-    settings = _load_settings(settings_path)
+    for t in targets:
+        settings_path = _get_settings_path(t, scope)
+        settings = _load_settings(settings_path)
 
-    if _has_ccr_hook(settings):
-        console.print(f"[yellow]CCR hook already installed in {settings_path}[/yellow]")
-        raise typer.Exit(0)
+        if _has_ccr_hook(settings, t):
+            console.print(f"[dim]-[/dim] {t}: already installed")
+            continue
 
-    settings = _add_ccr_hook(settings)
-    _save_settings(settings_path, settings)
+        settings = _add_ccr_hook(settings, t)
+        _save_settings(settings_path, settings)
+        console.print(f"[green]✓[/green] {t}: installed hooks in {settings_path}")
 
-    console.print(f"[green]✓[/green] Installed CCR hook in {settings_path}")
-    console.print("\n[bold]What happens now:[/bold]")
-    console.print("  • Claude Code will run 'ccr review' after Edit/Write/NotebookEdit")
-    console.print("  • Reviews only run if .cleancoderules/ exists in the project")
-    console.print("  • Review output appears in Claude's context")
+    console.print("\n[bold]CCR will now review code after file edits.[/bold]")
 
 
 @hooks_app.command(name="uninstall")
 def hooks_uninstall(
-    scope: Annotated[
+    global_scope: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Uninstall from global (user-level)"),
+    ] = False,
+    target: Annotated[
         str,
-        typer.Option("--scope", "-s", help="Scope: 'user' (~/.claude) or 'project' (.claude)"),
-    ] = "project",
+        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', or 'all'"),
+    ] = "all",
 ) -> None:
-    """Uninstall Claude Code hooks.
+    """Uninstall hooks.
 
     Examples:
-        ccr hooks uninstall              # Uninstall from current project
-        ccr hooks uninstall -s user      # Uninstall from global settings
+        ccr hooks uninstall                  # Uninstall from all detected CLIs
+        ccr hooks uninstall -t claude        # Uninstall from Claude Code only
+        ccr hooks uninstall -g               # Uninstall from global settings
     """
-    if scope not in ("user", "project"):
-        console.print(f"[red]Invalid scope: {scope}[/red]")
-        console.print("Use 'user' or 'project'")
+    scope = "user" if global_scope else "project"
+
+    # Determine targets
+    if target == "all":
+        targets = HOOK_TARGETS
+    elif target in HOOK_TARGETS:
+        targets = [target]
+    else:
+        console.print(f"[red]Invalid target: {target}[/red]")
         raise typer.Exit(1)
 
-    settings_path = _get_settings_path(scope)
-    settings = _load_settings(settings_path)
+    for t in targets:
+        settings_path = _get_settings_path(t, scope)
+        settings = _load_settings(settings_path)
 
-    if not _has_ccr_hook(settings):
-        console.print(f"[yellow]No CCR hook found in {settings_path}[/yellow]")
-        raise typer.Exit(0)
+        if not _has_ccr_hook(settings, t):
+            continue
 
-    settings = _remove_ccr_hook(settings)
-    _save_settings(settings_path, settings)
-
-    console.print(f"[green]✓[/green] Removed CCR hook from {settings_path}")
+        settings = _remove_ccr_hook(settings, t)
+        _save_settings(settings_path, settings)
+        console.print(f"[green]✓[/green] {t}: removed hooks from {settings_path}")
 
 
 @hooks_app.command(name="status")
@@ -1271,32 +1459,44 @@ def hooks_status() -> None:
     from rich.table import Table
 
     table = Table(title="CCR Hook Status")
-    table.add_column("Scope", style="cyan")
+    table.add_column("Target", style="cyan")
+    table.add_column("Scope", style="dim")
     table.add_column("Path", style="dim")
     table.add_column("Status", style="bold")
 
-    for scope in ("project", "user"):
-        settings_path = _get_settings_path(scope)
-        settings = _load_settings(settings_path)
+    for t in HOOK_TARGETS:
+        for scope in ("project", "user"):
+            settings_path = _get_settings_path(t, scope)
+            settings = _load_settings(settings_path)
 
-        if not settings_path.exists():
-            status = "[dim]No settings file[/dim]"
-        elif _has_ccr_hook(settings):
-            status = "[green]Installed[/green]"
-        else:
-            status = "[yellow]Not installed[/yellow]"
+            if not settings_path.exists():
+                status = "[dim]No settings[/dim]"
+            elif _has_ccr_hook(settings, t):
+                status = "[green]Installed[/green]"
+            else:
+                status = "[yellow]Not installed[/yellow]"
 
-        table.add_row(scope, str(settings_path), status)
+            table.add_row(t, scope, str(settings_path), status)
 
     console.print(table)
 
+    # Show detection status
+    console.print("\n[bold]Detection:[/bold]")
+    console.print(f"  Claude Code: {'[green]found[/green]' if _is_claude_code_installed() else '[dim]not found[/dim]'}")
+    console.print(f"  Gemini CLI:  {'[green]found[/green]' if _is_gemini_cli_installed() else '[dim]not found[/dim]'}")
+
 
 @hooks_app.command(name="handle", hidden=True)
-def hooks_handle() -> None:
-    """Handle hook events from Claude Code (internal command).
+def hooks_handle(
+    event: Annotated[
+        str,
+        typer.Option("--event", "-e", help="Hook event type: 'before' or 'after'"),
+    ] = "after",
+) -> None:
+    """Handle hook events from AI coding assistants (internal command).
 
-    This command is called by Claude Code hooks. It reads JSON from stdin,
-    processes the hook event, and outputs a response.
+    Before event: Output rules for the AI to follow during coding.
+    After event: Review the code and suggest refactoring.
 
     Works on Windows, macOS, and Linux.
     """
@@ -1315,59 +1515,93 @@ def hooks_handle() -> None:
         tool_input = hook_input.get("tool_input", {})
         file_path = tool_input.get("file_path") or tool_input.get("notebook_path")
 
-        if not file_path:
-            sys.exit(0)
-
         # Check if .cleancoderules directory exists
         rules_dir = Path(".cleancoderules")
         if not rules_dir.exists():
             sys.exit(0)
 
-        # Check if file exists
-        target_file = Path(file_path)
-        if not target_file.exists():
-            sys.exit(0)
-
-        # Run the review
-        from clean_code_reviewer.core.prompt_builder import CodeContext, PromptBuilder
-        from clean_code_reviewer.core.reviewers import ReviewRequest, get_reviewer
         from clean_code_reviewer.core.rules_engine import RulesEngine
 
         engine = RulesEngine(rules_dir)
-        builder = PromptBuilder(engine)
 
-        context = CodeContext.from_file(target_file)
-        if context is None:
-            sys.exit(0)
+        if event == "before":
+            # Before: Show rules to follow during coding
+            if not file_path:
+                # No file path yet, show all rules
+                rules_text = engine.merge_rules()
+            else:
+                # Detect language from file extension
+                target_file = Path(file_path)
+                ext = target_file.suffix.lower()
+                lang_map = {
+                    ".py": "python", ".js": "javascript", ".ts": "typescript",
+                    ".tsx": "typescript", ".jsx": "javascript", ".go": "go",
+                    ".rs": "rust", ".java": "java", ".rb": "ruby", ".php": "php",
+                }
+                language = lang_map.get(ext)
+                rules_text = engine.merge_rules(language=language)
 
-        system_prompt, user_prompt = builder.build_review_prompt(code=context)
-
-        request = ReviewRequest(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            file_path=str(target_file),
-            language=context.language,
-        )
-
-        settings = get_effective_settings()
-        reviewer = get_reviewer("litellm", model=settings.model, settings=settings)
-
-        if not reviewer.is_available():
-            sys.exit(0)
-
-        response = reviewer.review(request)
-
-        if response.error:
-            sys.exit(0)
-
-        # Output response for Claude to see
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": f"CCR Review for {file_path}:\n\n{response.content}",
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": (
+                        "## CCR Rules - Follow these during coding:\n\n"
+                        f"{rules_text}\n\n"
+                        "Apply these rules while writing/editing this file."
+                    ),
+                }
             }
-        }
-        print(json.dumps(output))
+            print(json.dumps(output))
+
+        else:  # after
+            # After: Review the code and suggest refactoring
+            if not file_path:
+                sys.exit(0)
+
+            target_file = Path(file_path)
+            if not target_file.exists():
+                sys.exit(0)
+
+            from clean_code_reviewer.core.prompt_builder import CodeContext, PromptBuilder
+            from clean_code_reviewer.core.reviewers import ReviewRequest, get_reviewer
+
+            builder = PromptBuilder(engine)
+
+            context = CodeContext.from_file(target_file)
+            if context is None:
+                sys.exit(0)
+
+            system_prompt, user_prompt = builder.build_review_prompt(code=context)
+
+            request = ReviewRequest(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                file_path=str(target_file),
+                language=context.language,
+            )
+
+            settings = get_effective_settings()
+            reviewer = get_reviewer("litellm", model=settings.model, settings=settings)
+
+            if not reviewer.is_available():
+                sys.exit(0)
+
+            response = reviewer.review(request)
+
+            if response.error:
+                sys.exit(0)
+
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": (
+                        f"## CCR Review for {file_path}:\n\n"
+                        f"{response.content}\n\n"
+                        "Fix any violations before continuing."
+                    ),
+                }
+            }
+            print(json.dumps(output))
 
     except Exception:
         # Always exit silently on any error

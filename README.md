@@ -197,7 +197,44 @@ ccr list                # List installed rules
 ccr review <files>      # Review code files
 ccr mcp                 # Start MCP server
 ccr config              # Show/edit configuration
+ccr hooks install       # Install AI assistant hooks
+ccr hooks status        # Show hook status
+ccr update              # Update rules, agent files, and hooks
 ```
+
+### `ccr review` Options
+
+| Option      | Short | Description                                 |
+|-------------|-------|---------------------------------------------|
+| `FILES`     |       | Files or directories to review              |
+| `--pattern` | `-p`  | Glob patterns (e.g., `**/*.py`)             |
+| `--changed` | `-c`  | Git changed files only                      |
+| `--staged`  |       | Git staged files only                       |
+| `--base`    | `-b`  | Git base ref (default: HEAD)                |
+| `--compare` |       | Git compare ref                             |
+| `--reviewer`| `-r`  | Backend: litellm, claudecode, gemini, codex |
+| `--rules-dir`| `-d` | Rules directory                             |
+| `--model`   | `-m`  | LLM model (for litellm)                     |
+| `--tags`    | `-t`  | Rule tags (comma-separated)                 |
+| `--output`  | `-o`  | Output file                                 |
+| `--stream`  | `-s`  | Stream output                               |
+
+### `ccr hooks` - AI Assistant Integration
+
+CCR can automatically review code when AI coding assistants (Claude Code, Gemini CLI) edit files:
+
+```bash
+ccr hooks install              # Install for detected CLIs
+ccr hooks install -t claude    # Claude Code only
+ccr hooks install -t gemini    # Gemini CLI only
+ccr hooks install -g           # Install globally
+ccr hooks uninstall            # Remove hooks
+ccr hooks status               # Show installation status
+```
+
+**How it works:**
+- **Before edit**: Shows rules to the AI to follow during coding
+- **After edit**: Reviews the code and suggests fixes
 
 ## Development
 
