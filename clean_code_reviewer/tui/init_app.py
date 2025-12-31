@@ -13,24 +13,9 @@ from textual.widgets import (
     Checkbox,
     Footer,
     Header,
-    Label,
     Static,
 )
 
-
-# Available languages and their rule mappings
-AVAILABLE_LANGUAGES: dict[str, list[str]] = {
-    "Python": ["google/python"],
-    "JavaScript": ["airbnb/javascript"],
-    "TypeScript": ["airbnb/javascript"],
-    "React": ["airbnb/react"],
-    "Go": ["google/go", "uber/go"],
-    "Java": ["google/java"],
-    "C++": ["google/cpp"],
-    "C#": ["microsoft/csharp"],
-    "Swift": ["google/swift"],
-    "Shell": ["google/shell"],
-}
 
 AGENT_OPTIONS = [
     ("claude", "CLAUDE.md", "For Claude Code"),
@@ -42,7 +27,6 @@ AGENT_OPTIONS = [
 class InitResult:
     """Result from the init TUI."""
 
-    languages: list[str]
     agent_files: list[str]  # "claude", "cursor", or both
     cancelled: bool = False
 
@@ -56,9 +40,8 @@ class InitApp(App[InitResult]):
     }
 
     #main-container {
-        width: 60;
+        width: 50;
         height: auto;
-        max-height: 90%;
         border: solid $accent;
         padding: 1 2;
     }
@@ -66,7 +49,6 @@ class InitApp(App[InitResult]):
     .section-title {
         text-style: bold;
         margin-bottom: 1;
-        color: $text;
     }
 
     .section-subtitle {
@@ -74,23 +56,18 @@ class InitApp(App[InitResult]):
         margin-bottom: 1;
     }
 
-    #languages-container {
-        height: auto;
-        max-height: 12;
-        margin-bottom: 1;
-        padding: 0 1;
-    }
-
     #agents-container {
         height: auto;
         margin-bottom: 1;
-        padding: 0 1;
     }
 
     Checkbox {
-        margin: 0;
-        padding: 0;
-        height: 1;
+        height: 3;
+        padding: 1;
+    }
+
+    Checkbox:focus {
+        background: $accent 20%;
     }
 
     #buttons {
@@ -115,59 +92,40 @@ class InitApp(App[InitResult]):
         Binding("enter", "continue", "Continue"),
         Binding("escape", "cancel", "Cancel"),
         Binding("q", "cancel", "Cancel", show=False),
+        Binding("j", "focus_next", "Next", show=False),
+        Binding("k", "focus_previous", "Previous", show=False),
+        Binding("down", "focus_next", "Next"),
+        Binding("up", "focus_previous", "Previous"),
+        Binding("space", "toggle_checkbox", "Toggle", show=False),
     ]
 
     def __init__(self, project_path: Path) -> None:
         super().__init__()
         self.project_path = project_path
-        self.selected_languages: set[str] = set()
         self.selected_agents: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="main-container"):
-            yield Static("Select Languages", classes="section-title")
-            yield Static("Choose languages used in this project:", classes="section-subtitle")
-            with Vertical(id="languages-container"):
-                for lang in AVAILABLE_LANGUAGES:
-                    # Sanitize ID: replace invalid chars with underscores
-                    safe_id = lang.lower().replace("+", "plus").replace("#", "sharp")
-                    yield Checkbox(lang, id=f"lang-{safe_id}")
-
             yield Static("Agent Integration", classes="section-title")
             yield Static("Create config files for AI assistants:", classes="section-subtitle")
             with Vertical(id="agents-container"):
                 for agent_id, filename, description in AGENT_OPTIONS:
                     label = f"{filename} ({description})"
-                    yield Checkbox(label, id=f"agent-{agent_id}")
+                    yield Checkbox(label, value=False, id=f"agent-{agent_id}")
 
             with Container(id="buttons"):
                 yield Button("Continue", variant="primary", id="btn-continue")
                 yield Button("Skip", variant="default", id="btn-skip")
 
-            yield Static("Press Enter to continue, Esc to cancel", id="status")
+            yield Static("↑/↓ navigate, Space toggle, Enter continue", id="status")
         yield Footer()
-
-    def _sanitize_id(self, name: str) -> str:
-        """Sanitize a name for use as widget ID."""
-        return name.lower().replace("+", "plus").replace("#", "sharp")
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle checkbox state changes."""
         checkbox_id = event.checkbox.id or ""
 
-        if checkbox_id.startswith("lang-"):
-            lang_id = checkbox_id.replace("lang-", "")
-            # Find the actual language name by matching sanitized ID
-            for full_lang in AVAILABLE_LANGUAGES:
-                if self._sanitize_id(full_lang) == lang_id:
-                    if event.value:
-                        self.selected_languages.add(full_lang)
-                    else:
-                        self.selected_languages.discard(full_lang)
-                    break
-
-        elif checkbox_id.startswith("agent-"):
+        if checkbox_id.startswith("agent-"):
             agent = checkbox_id.replace("agent-", "")
             if event.value:
                 self.selected_agents.add(agent)
@@ -179,34 +137,21 @@ class InitApp(App[InitResult]):
         if event.button.id == "btn-continue":
             self.action_continue()
         elif event.button.id == "btn-skip":
-            # Skip with empty selections
-            self.exit(
-                InitResult(
-                    languages=[],
-                    agent_files=[],
-                    cancelled=False,
-                )
-            )
+            self.exit(InitResult(agent_files=[], cancelled=False))
 
     def action_continue(self) -> None:
         """Continue with selected options."""
-        self.exit(
-            InitResult(
-                languages=list(self.selected_languages),
-                agent_files=list(self.selected_agents),
-                cancelled=False,
-            )
-        )
+        self.exit(InitResult(agent_files=list(self.selected_agents), cancelled=False))
 
     def action_cancel(self) -> None:
         """Cancel initialization."""
-        self.exit(
-            InitResult(
-                languages=[],
-                agent_files=[],
-                cancelled=True,
-            )
-        )
+        self.exit(InitResult(agent_files=[], cancelled=True))
+
+    def action_toggle_checkbox(self) -> None:
+        """Toggle the currently focused checkbox."""
+        focused = self.focused
+        if isinstance(focused, Checkbox):
+            focused.toggle()
 
 
 def run_init_tui(project_path: Path) -> InitResult:
@@ -214,5 +159,5 @@ def run_init_tui(project_path: Path) -> InitResult:
     app = InitApp(project_path)
     result = app.run()
     if result is None:
-        return InitResult(languages=[], agent_files=[], cancelled=True)
+        return InitResult(agent_files=[], cancelled=True)
     return result

@@ -64,19 +64,6 @@ def main(
     setup_logging(level=log_level)
 
 
-# Available languages for rule download
-AVAILABLE_LANGUAGES: dict[str, list[str]] = {
-    "Python": ["google/python"],
-    "JavaScript": ["airbnb/javascript"],
-    "TypeScript": ["airbnb/javascript"],
-    "React": ["airbnb/react"],
-    "Go": ["google/go", "uber/go"],
-    "Java": ["google/java"],
-    "C++": ["google/cpp"],
-    "C#": ["microsoft/csharp"],
-    "Swift": ["google/swift"],
-    "Shell": ["google/shell"],
-}
 
 
 def _get_agent_instructions() -> str:
@@ -136,7 +123,6 @@ def init(
         raise typer.Exit(1)
 
     # Run TUI for interactive mode
-    selected_langs: list[str] = []
     selected_agents: list[str] = []
 
     if not non_interactive:
@@ -144,7 +130,6 @@ def init(
         if tui_result.cancelled:
             console.print("[yellow]Initialization cancelled.[/yellow]")
             raise typer.Exit(0)
-        selected_langs = tui_result.languages
         selected_agents = tui_result.agent_files
 
     console.print("[bold blue]Initializing Clean Code Reviewer...[/bold blue]\n")
@@ -180,22 +165,6 @@ rules_priority:
             else:
                 console.print(f"  [yellow]![/yellow] Could not download base.yml (will use sample)")
                 _write_sample_base_rule(rules_dir)
-
-        # Download language-specific rules (Level 2 -> community/ folder)
-        if selected_langs:
-            console.print("\n[bold]Downloading language rules...[/bold]")
-            downloaded_rules: set[str] = set()
-            with RulesManager() as manager:
-                for lang in selected_langs:
-                    for rule_path in AVAILABLE_LANGUAGES.get(lang, []):
-                        if rule_path in downloaded_rules:
-                            continue
-                        result = manager.download_rule(rule_path, rules_dir / "community")
-                        if result:
-                            console.print(f"  [green]✓[/green] Downloaded community/{rule_path}")
-                            downloaded_rules.add(rule_path)
-                        else:
-                            console.print(f"  [yellow]![/yellow] Could not download {rule_path}")
     else:
         _write_sample_base_rule(rules_dir)
         console.print(f"  [green]✓[/green] Created base.yml (sample)")
@@ -442,76 +411,93 @@ def remove(
 
 @app.command(name="list")
 def list_rules(
+    query: Annotated[
+        Optional[str],
+        typer.Argument(help="Search term (matches name, namespace, or tags)"),
+    ] = None,
     rules_dir: Annotated[
         Path,
         typer.Option("--rules-dir", "-d", help="Rules directory"),
     ] = Path(".cleancoderules"),
-    language: Annotated[
-        Optional[str],
-        typer.Option("--language", "-l", help="Filter by language"),
-    ] = None,
-    tags: Annotated[
-        Optional[str],
-        typer.Option("--tags", "-t", help="Filter by tags (comma-separated)"),
-    ] = None,
     remote: Annotated[
         bool,
-        typer.Option("--remote", "-r", help="List available rules from remote repository"),
+        typer.Option("--remote", "-r", help="List remote rules only"),
+    ] = False,
+    all_rules: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="List both local and remote rules"),
     ] = False,
 ) -> None:
-    """List installed or available rules."""
-    if remote:
-        # List rules from remote repository
-        console.print("[blue]Fetching available rules...[/blue]")
-        with RulesManager() as manager:
-            rules = manager.list_available_rules()
+    """List installed or available rules.
 
-        if not rules:
-            console.print("[yellow]No rules found (repository may not exist yet)[/yellow]")
-            console.print("Browse available rules at: https://github.com/CleanCodeReviewer/Rules")
-            return
+    Examples:
+        ccr list              # List all local rules
+        ccr list python       # List local rules matching 'python'
+        ccr list -r           # List all remote rules
+        ccr list python -r    # List remote rules matching 'python'
+        ccr list python -a    # List both local and remote matching 'python'
+    """
 
-        table = Table(title="Available Rules")
-        table.add_column("Namespace", style="cyan")
-        table.add_column("Rule", style="green")
-        table.add_column("Description", style="dim")
+    def matches_query(name: str, namespace: str = "", tags: list[str] | None = None) -> bool:
+        """Check if rule matches the search query."""
+        if not query:
+            return True
+        q = query.lower()
+        if q in name.lower():
+            return True
+        if namespace and q in namespace.lower():
+            return True
+        if tags and any(q in tag.lower() for tag in tags):
+            return True
+        return False
 
-        for rule in rules:
-            table.add_row(rule.namespace, rule.name, rule.description or "")
+    show_local = not remote or all_rules
+    show_remote = remote or all_rules
 
-        console.print(table)
-    else:
-        # List installed rules
+    # List local rules
+    if show_local:
         engine = RulesEngine(rules_dir)
-        rules = engine.rules
+        local_rules = [r for r in engine.rules if matches_query(r.name, "", r.tags)]
 
-        if language:
-            rules = [r for r in rules if r.matches_language(language)]
+        if local_rules:
+            table = Table(title="Local Rules")
+            table.add_column("Level", style="magenta")
+            table.add_column("Name", style="cyan")
+            table.add_column("Tags", style="yellow")
 
-        if tags:
-            tag_list = [t.strip() for t in tags.split(",")]
-            rules = [r for r in rules if any(r.has_tag(t) for t in tag_list)]
-
-        if not rules:
-            console.print("[yellow]No rules found[/yellow]")
+            for rule in local_rules:
+                table.add_row(
+                    rule.level_name,
+                    rule.name,
+                    ", ".join(rule.tags) if rule.tags else "-",
+                )
+            console.print(table)
+        elif not show_remote:
+            console.print("[yellow]No local rules found[/yellow]")
             console.print("Run 'ccr init' to create default rules or 'ccr add' to download rules")
-            return
 
-        table = Table(title="Installed Rules")
-        table.add_column("Level", style="magenta")
-        table.add_column("Name", style="cyan")
-        table.add_column("Language", style="green")
-        table.add_column("Tags", style="yellow")
+    # List remote rules
+    if show_remote:
+        if show_local:
+            console.print()  # Add spacing between tables
+        console.print("[blue]Fetching remote rules...[/blue]")
 
-        for rule in rules:
-            table.add_row(
-                rule.level_name,
-                rule.name,
-                rule.language or "all",
-                ", ".join(rule.tags) if rule.tags else "-",
-            )
+        with RulesManager() as manager:
+            all_remote = manager.list_available_rules()
 
-        console.print(table)
+        remote_rules = [r for r in all_remote if matches_query(r.name, r.namespace)]
+
+        if remote_rules:
+            table = Table(title="Remote Rules")
+            table.add_column("Namespace", style="cyan")
+            table.add_column("Rule", style="green")
+
+            for rule in remote_rules:
+                table.add_row(rule.namespace or "(base)", rule.name)
+            console.print(table)
+        elif not show_local:
+            console.print("[yellow]No remote rules found[/yellow]")
+            console.print("Browse available rules at: https://github.com/CleanCodeReviewer/Rules")
 
 
 @app.command()
