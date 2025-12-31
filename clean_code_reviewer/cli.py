@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -403,6 +404,110 @@ def remove(
     else:
         console.print(f"[red]Could not find rule file to remove[/red]")
         raise typer.Exit(1)
+
+
+@app.command()
+def update(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Project path"),
+    ] = Path("."),
+    rules: Annotated[
+        bool,
+        typer.Option("--rules", "-r", help="Update rules from remote"),
+    ] = False,
+    agents: Annotated[
+        bool,
+        typer.Option("--agents", "-a", help="Update agent instruction files"),
+    ] = False,
+    rules_dir: Annotated[
+        Path,
+        typer.Option("--rules-dir", "-d", help="Rules directory"),
+    ] = Path(".cleancoderules"),
+) -> None:
+    """Update rules and/or agent instruction files.
+
+    Examples:
+        ccr update           # Update both rules and agent files
+        ccr update --rules   # Only update rules from remote
+        ccr update --agents  # Only update agent instructions
+    """
+    # If neither flag is set, update both
+    update_rules = rules or not agents
+    update_agents = agents or not rules
+
+    rules_path = path / rules_dir
+
+    if not rules_path.exists():
+        console.print(f"[red]Rules directory not found: {rules_path}[/red]")
+        console.print("Run 'ccr init' first to initialize the project.")
+        raise typer.Exit(1)
+
+    # Update rules from remote
+    if update_rules:
+        console.print("[bold]Updating rules from remote...[/bold]")
+        community_dir = rules_path / "community"
+
+        # Re-download base.yml
+        with RulesManager() as manager:
+            result = manager.download_rule("base", rules_path)
+            if result:
+                console.print(f"  [green]✓[/green] Updated base.yml")
+            else:
+                console.print(f"  [yellow]![/yellow] Could not update base.yml")
+
+            # Find and update community rules
+            if community_dir.exists():
+                for namespace_dir in community_dir.iterdir():
+                    if namespace_dir.is_dir():
+                        namespace = namespace_dir.name
+                        for rule_file in namespace_dir.glob("*.yml"):
+                            rule_name = rule_file.stem
+                            rule_path = f"{namespace}/{rule_name}"
+                            result = manager.download_rule(rule_path, community_dir)
+                            if result:
+                                console.print(f"  [green]✓[/green] Updated {rule_path}")
+                            else:
+                                console.print(f"  [yellow]![/yellow] Could not update {rule_path}")
+
+    # Update agent instruction files
+    if update_agents:
+        console.print("\n[bold]Updating agent instruction files...[/bold]")
+        instructions = _get_agent_instructions()
+        pattern = r"## Clean Code Reviewer.*?(?=\n## |\n# |\Z)"
+
+        # Update CLAUDE.md
+        claude_path = path / "CLAUDE.md"
+        if claude_path.exists():
+            content = read_file_safe(claude_path) or ""
+            if "Clean Code Reviewer" in content:
+                new_content = re.sub(pattern, instructions.strip(), content, flags=re.DOTALL)
+                if new_content != content:
+                    write_file_safe(claude_path, new_content)
+                    console.print(f"  [green]✓[/green] Updated CLAUDE.md")
+                else:
+                    console.print(f"  [dim]-[/dim] CLAUDE.md already up to date")
+            else:
+                console.print(f"  [dim]-[/dim] CLAUDE.md exists but has no CCR section")
+
+        # Update .cursorrules
+        cursor_path = path / ".cursorrules"
+        if cursor_path.exists():
+            content = read_file_safe(cursor_path) or ""
+            if "Clean Code Reviewer" in content:
+                new_content = re.sub(pattern, instructions.strip(), content, flags=re.DOTALL)
+                if new_content != content:
+                    write_file_safe(cursor_path, new_content)
+                    console.print(f"  [green]✓[/green] Updated .cursorrules")
+                else:
+                    console.print(f"  [dim]-[/dim] .cursorrules already up to date")
+            else:
+                console.print(f"  [dim]-[/dim] .cursorrules exists but has no CCR section")
+
+        if not claude_path.exists() and not cursor_path.exists():
+            console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
+
+    console.print("\n[bold green]Update complete![/bold green]")
 
 
 @app.command(name="list")
