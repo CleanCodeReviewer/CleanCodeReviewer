@@ -68,28 +68,24 @@ def main(
 
 def _get_agent_instructions() -> str:
     """Get the CCR instructions for agent files."""
-    return """## Code Review with Clean Code Reviewer
+    return """## Clean Code Reviewer
 
-**Before generating or modifying code**, you SHOULD:
+**Before generating or modifying code**, you MUST:
+1. Check if `.cleancoderules/` exists.
+2. If it exists, read and apply those rules.
+3. If it does not exist, proceed with Level 2/1 rules only.
 
-1. Check if `.cleancoderules/` exists in the project
-2. If it exists, review the rules in that directory
-3. Apply these rules when writing code
-
-**After generating code**, you SHOULD:
-
-1. Use the `review_code` MCP tool if available
-2. Or run `ccr review <file>` to check compliance
-3. Fix any violations before presenting the code
+**After generating or modifying code**, you MUST:
+1. Use the `review_code` MCP tool if it is configured in this environment.
+2. Otherwise run `ccr review <file>` for each modified file.
+3. Fix any violations before presenting the code.
 
 ### Rule Priority
+- Level 3: Team rules in `.cleancoderules/` (highest)
+- Level 2: Language-specific rules
+- Level 1: General principles
 
-Rules are organized in levels (higher overrides lower):
-- Level 3 (Team rules in .cleancoderules/) - HIGHEST PRIORITY
-- Level 2 (Language-specific rules)
-- Level 1 (General principles)
-
-If rules conflict, **always follow the higher-level rule**.
+If rules conflict, always follow the higher-level rule.
 """
 
 
