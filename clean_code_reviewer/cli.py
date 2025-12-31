@@ -67,8 +67,8 @@ def main(
 
 
 
-def _get_agent_instructions() -> str:
-    """Get the CCR instructions for agent files."""
+def _get_prompt_instructions() -> str:
+    """Get the CCR instructions for prompt files."""
     return """## Clean Code Reviewer
 
 **Before generating or modifying code**, you MUST:
@@ -120,14 +120,14 @@ def init(
         raise typer.Exit(1)
 
     # Run TUI for interactive mode
-    selected_agents: list[str] = []
+    selected_prompts: list[str] = []
 
     if not non_interactive:
         tui_result = run_init_tui(path)
         if tui_result.cancelled:
             console.print("[yellow]Initialization cancelled.[/yellow]")
             raise typer.Exit(0)
-        selected_agents = tui_result.agent_files
+        selected_prompts = tui_result.prompt_files
 
     console.print("[bold blue]Initializing Clean Code Reviewer...[/bold blue]\n")
 
@@ -175,11 +175,11 @@ rules_priority:
     order_manager.add_rule("team", "example")
     console.print(f"  [green]✓[/green] Created order.yml")
 
-    # Handle agent files based on TUI selection
-    if selected_agents:
-        instructions = _get_agent_instructions()
+    # Handle prompt files based on TUI selection
+    if selected_prompts:
+        instructions = _get_prompt_instructions()
 
-        if "claude" in selected_agents:
+        if "claude" in selected_prompts:
             claude_path = path / "CLAUDE.md"
             if claude_path.exists():
                 existing = read_file_safe(claude_path) or ""
@@ -190,7 +190,7 @@ rules_priority:
                 write_file_safe(claude_path, f"# Project Guidelines\n\n{instructions}")
                 console.print(f"  [green]✓[/green] Created CLAUDE.md")
 
-        if "cursor" in selected_agents:
+        if "cursor" in selected_prompts:
             cursor_path = path / ".cursorrules"
             if cursor_path.exists():
                 existing = read_file_safe(cursor_path) or ""
@@ -416,25 +416,25 @@ def update(
         bool,
         typer.Option("--rules", "-r", help="Update rules from remote"),
     ] = False,
-    agents: Annotated[
+    prompts: Annotated[
         bool,
-        typer.Option("--agents", "-a", help="Update agent instruction files"),
+        typer.Option("--prompts", "-p", help="Update prompt files (CLAUDE.md, .cursorrules)"),
     ] = False,
     rules_dir: Annotated[
         Path,
         typer.Option("--rules-dir", "-d", help="Rules directory"),
     ] = Path(".cleancoderules"),
 ) -> None:
-    """Update rules and/or agent instruction files.
+    """Update rules and/or prompt files.
 
     Examples:
-        ccr update           # Update both rules and agent files
-        ccr update --rules   # Only update rules from remote
-        ccr update --agents  # Only update agent instructions
+        ccr update            # Update both rules and prompts
+        ccr update --rules    # Only update rules from remote
+        ccr update --prompts  # Only update prompt files
     """
     # If neither flag is set, update both
-    update_rules = rules or not agents
-    update_agents = agents or not rules
+    update_rules = rules or not prompts
+    update_prompts = prompts or not rules
 
     rules_path = path / rules_dir
 
@@ -470,14 +470,14 @@ def update(
                             else:
                                 console.print(f"  [yellow]![/yellow] Could not update {rule_path}")
 
-    # Update agent instruction files
-    if update_agents:
-        console.print("\n[bold]Updating agent instruction files...[/bold]")
-        instructions = _get_agent_instructions()
+    # Update prompt files
+    if update_prompts:
+        console.print("\n[bold]Updating prompt files...[/bold]")
+        instructions = _get_prompt_instructions()
         # Match any heading containing "Clean Code Reviewer" and everything until next heading
         pattern = r"##[^\n]*Clean Code Reviewer[^\n]*\n.*?(?=\n## |\n# |\Z)"
 
-        def update_agent_file(file_path: Path, name: str) -> None:
+        def update_prompt_file(file_path: Path, name: str) -> None:
             if not file_path.exists():
                 return
             content = read_file_safe(file_path) or ""
@@ -491,11 +491,11 @@ def update(
         claude_path = path / "CLAUDE.md"
         cursor_path = path / ".cursorrules"
 
-        update_agent_file(claude_path, "CLAUDE.md")
-        update_agent_file(cursor_path, ".cursorrules")
+        update_prompt_file(claude_path, "CLAUDE.md")
+        update_prompt_file(cursor_path, ".cursorrules")
 
         if not claude_path.exists() and not cursor_path.exists():
-            console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
+            console.print("  [yellow]No prompt files found (CLAUDE.md or .cursorrules)[/yellow]")
 
     console.print("\n[bold green]Update complete![/bold green]")
 

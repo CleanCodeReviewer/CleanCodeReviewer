@@ -18,7 +18,7 @@ from textual.widgets import (
 from textual.widgets.selection_list import Selection
 
 
-AGENT_OPTIONS = [
+PROMPT_OPTIONS = [
     ("claude", "CLAUDE.md (Claude Code)"),
     ("cursor", ".cursorrules (Cursor IDE)"),
 ]
@@ -28,7 +28,7 @@ AGENT_OPTIONS = [
 class InitResult:
     """Result from the init TUI."""
 
-    agent_files: list[str]
+    prompt_files: list[str]
     cancelled: bool = False
 
 
@@ -103,10 +103,10 @@ class InitApp(App[InitResult]):
         yield Header()
         with Container(id="main-container"):
             with Container(id="dialog"):
-                yield Static("Create AI Assistant Config Files?", classes="title")
+                yield Static("Create Prompt Files?", classes="title")
                 yield SelectionList[str](
-                    *[Selection(label, value, False) for value, label in AGENT_OPTIONS],
-                    id="agent-list",
+                    *[Selection(label, value, False) for value, label in PROMPT_OPTIONS],
+                    id="prompt-list",
                 )
                 with Container(id="buttons"):
                     yield Button("Continue", variant="primary", id="btn-continue")
@@ -118,17 +118,17 @@ class InitApp(App[InitResult]):
         if event.button.id == "btn-continue":
             self.action_continue()
         elif event.button.id == "btn-skip":
-            self.exit(InitResult(agent_files=[], cancelled=False))
+            self.exit(InitResult(prompt_files=[], cancelled=False))
 
     def action_continue(self) -> None:
         """Continue with selected options."""
-        selection_list = self.query_one("#agent-list", SelectionList)
+        selection_list = self.query_one("#prompt-list", SelectionList)
         selected = list(selection_list.selected)
-        self.exit(InitResult(agent_files=selected, cancelled=False))
+        self.exit(InitResult(prompt_files=selected, cancelled=False))
 
     def action_cancel(self) -> None:
         """Cancel initialization."""
-        self.exit(InitResult(agent_files=[], cancelled=True))
+        self.exit(InitResult(prompt_files=[], cancelled=True))
 
 
 def run_init_tui(project_path: Path) -> InitResult:
@@ -136,5 +136,5 @@ def run_init_tui(project_path: Path) -> InitResult:
     app = InitApp(project_path)
     result = app.run()
     if result is None:
-        return InitResult(agent_files=[], cancelled=True)
+        return InitResult(prompt_files=[], cancelled=True)
     return result
