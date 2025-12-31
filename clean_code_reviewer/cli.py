@@ -68,55 +68,15 @@ def main(
 AVAILABLE_LANGUAGES: dict[str, list[str]] = {
     "Python": ["google/python"],
     "JavaScript": ["airbnb/javascript"],
-    "TypeScript": ["airbnb/javascript"],  # Uses same rules
+    "TypeScript": ["airbnb/javascript"],
     "React": ["airbnb/react"],
-    "Go": ["google/go"],
+    "Go": ["google/go", "uber/go"],
+    "Java": ["google/java"],
+    "C++": ["google/cpp"],
+    "C#": ["microsoft/csharp"],
+    "Swift": ["google/swift"],
+    "Shell": ["google/shell"],
 }
-
-
-def _prompt_languages() -> list[str]:
-    """Prompt user to select languages using checkboxes."""
-    from rich.prompt import Confirm
-
-    console.print("\n[bold]Which languages do you use?[/bold]")
-    console.print("[dim]Select all that apply:[/dim]\n")
-
-    selected: list[str] = []
-    for lang in AVAILABLE_LANGUAGES:
-        if Confirm.ask(f"  {lang}", default=False):
-            selected.append(lang)
-
-    return selected
-
-
-def _prompt_agent_file(path: Path) -> str | None:
-    """Prompt user to select which agent file to create."""
-    from rich.prompt import Prompt
-
-    claude_md = path / "CLAUDE.md"
-    cursorrules = path / ".cursorrules"
-
-    # Check existing files
-    if claude_md.exists() and cursorrules.exists():
-        console.print("\n[green]Found both CLAUDE.md and .cursorrules[/green]")
-        return "both_exist"
-    elif claude_md.exists():
-        console.print("\n[green]Found existing CLAUDE.md[/green]")
-        return "claude"
-    elif cursorrules.exists():
-        console.print("\n[green]Found existing .cursorrules[/green]")
-        return "cursor"
-
-    # Neither exists, ask user
-    console.print("\n[bold]Create an AI agent instructions file?[/bold]")
-    console.print("[dim]This tells AI assistants to use CCR for code review.[/dim]\n")
-
-    choice = Prompt.ask(
-        "  Select",
-        choices=["claude", "cursor", "both", "skip"],
-        default="claude",
-    )
-    return choice
 
 
 def _get_agent_instructions() -> str:
@@ -166,12 +126,26 @@ def init(
     ] = False,
 ) -> None:
     """Initialize clean code rules in a project."""
+    from clean_code_reviewer.tui.init_app import run_init_tui
+
     rules_dir = path / ".cleancoderules"
 
     if rules_dir.exists() and not force:
         console.print(f"[yellow]Rules directory already exists: {rules_dir}[/yellow]")
         console.print("Use --force to overwrite")
         raise typer.Exit(1)
+
+    # Run TUI for interactive mode
+    selected_langs: list[str] = []
+    selected_agents: list[str] = []
+
+    if not non_interactive:
+        tui_result = run_init_tui(path)
+        if tui_result.cancelled:
+            console.print("[yellow]Initialization cancelled.[/yellow]")
+            raise typer.Exit(0)
+        selected_langs = tui_result.languages
+        selected_agents = tui_result.agent_files
 
     console.print("[bold blue]Initializing Clean Code Reviewer...[/bold blue]\n")
 
@@ -207,12 +181,6 @@ rules_priority:
                 console.print(f"  [yellow]![/yellow] Could not download base.yml (will use sample)")
                 _write_sample_base_rule(rules_dir)
 
-        # Ask for languages (unless non-interactive)
-        if non_interactive:
-            selected_langs: list[str] = []
-        else:
-            selected_langs = _prompt_languages()
-
         # Download language-specific rules (Level 2 -> community/ folder)
         if selected_langs:
             console.print("\n[bold]Downloading language rules...[/bold]")
@@ -241,37 +209,31 @@ rules_priority:
     order_manager.add_rule("team", "example")
     console.print(f"  [green]✓[/green] Created order.yml")
 
-    # Handle agent files (CLAUDE.md / .cursorrules)
-    if non_interactive:
-        agent_choice = "skip"
-    else:
-        agent_choice = _prompt_agent_file(path)
-
-    if agent_choice and agent_choice not in ("skip", "both_exist"):
+    # Handle agent files based on TUI selection
+    if selected_agents:
         instructions = _get_agent_instructions()
 
-        if agent_choice in ("claude", "both"):
+        if "claude" in selected_agents:
             claude_path = path / "CLAUDE.md"
             if claude_path.exists():
-                # Append to existing
                 existing = read_file_safe(claude_path) or ""
                 if "Clean Code Reviewer" not in existing:
                     write_file_safe(claude_path, existing + "\n\n" + instructions)
-                    console.print(f"\n  [green]✓[/green] Updated CLAUDE.md with CCR instructions")
+                    console.print(f"  [green]✓[/green] Updated CLAUDE.md with CCR instructions")
             else:
                 write_file_safe(claude_path, f"# Project Guidelines\n\n{instructions}")
-                console.print(f"\n  [green]✓[/green] Created CLAUDE.md")
+                console.print(f"  [green]✓[/green] Created CLAUDE.md")
 
-        if agent_choice in ("cursor", "both"):
+        if "cursor" in selected_agents:
             cursor_path = path / ".cursorrules"
             if cursor_path.exists():
                 existing = read_file_safe(cursor_path) or ""
                 if "Clean Code Reviewer" not in existing:
                     write_file_safe(cursor_path, existing + "\n\n" + instructions)
-                    console.print(f"\n  [green]✓[/green] Updated .cursorrules with CCR instructions")
+                    console.print(f"  [green]✓[/green] Updated .cursorrules with CCR instructions")
             else:
                 write_file_safe(cursor_path, instructions)
-                console.print(f"\n  [green]✓[/green] Created .cursorrules")
+                console.print(f"  [green]✓[/green] Created .cursorrules")
 
     # Add .cleancoderules to .gitignore if it exists
     gitignore_path = path / ".gitignore"
