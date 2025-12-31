@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +17,15 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
+from clean_code_reviewer.utils.detection import (
+    is_claude_code_installed,
+    is_cursor_installed,
+    is_gemini_cli_installed,
+    project_uses_claude,
+    project_uses_cursor,
+    project_uses_gemini,
+)
+
 
 PROMPT_OPTIONS = [
     ("claude", "CLAUDE.md (Claude Code)"),
@@ -25,38 +33,18 @@ PROMPT_OPTIONS = [
 ]
 
 
-def _is_claude_code_installed() -> bool:
-    """Check if Claude Code CLI is installed globally."""
-    if shutil.which("claude"):
-        return True
-    claude_dir = Path.home() / ".claude"
-    if claude_dir.exists():
-        return True
-    return False
+def _get_detected_targets_display(project_path: Path) -> list[str]:
+    """Get list of AI coding assistants for display in TUI.
 
-
-def _is_gemini_cli_installed() -> bool:
-    """Check if Gemini CLI is installed globally."""
-    if shutil.which("gemini"):
-        return True
-    gemini_dir = Path.home() / ".gemini"
-    if gemini_dir.exists():
-        return True
-    return False
-
-
-def _get_detected_targets(project_path: Path) -> list[str]:
-    """Get list of AI coding assistants that should be configured for this project.
-
-    Returns targets where both:
-    1. The CLI is installed globally
-    2. The project has the corresponding directory (.claude or .gemini)
+    Returns human-readable names for detected assistants.
     """
     targets = []
-    if _is_claude_code_installed() and (project_path / ".claude").exists():
+    if is_claude_code_installed() and project_uses_claude(project_path):
         targets.append("Claude Code")
-    if _is_gemini_cli_installed() and (project_path / ".gemini").exists():
+    if is_gemini_cli_installed() and project_uses_gemini(project_path):
         targets.append("Gemini CLI")
+    if is_cursor_installed() and project_uses_cursor(project_path):
+        targets.append("Cursor IDE")
     return targets
 
 
@@ -153,7 +141,7 @@ class InitApp(App[InitResult]):
                 yield Static("CCR Initialization", classes="title")
 
                 # Hook info section (show detected AI assistants)
-                detected = _get_detected_targets(self.project_path)
+                detected = _get_detected_targets_display(self.project_path)
                 if detected:
                     yield Static("Hooks", classes="section-title")
                     hook_info = "✓ Will install hooks for:\n"

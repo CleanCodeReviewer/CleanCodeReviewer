@@ -20,6 +20,12 @@ from clean_code_reviewer.core.order_manager import OrderManager
 from clean_code_reviewer.core.rules_manager import RulesManager
 from clean_code_reviewer.core.rules_engine import RulesEngine
 from clean_code_reviewer.utils.config import get_effective_settings
+from clean_code_reviewer.utils.detection import (
+    get_project_targets,
+    is_claude_code_installed,
+    is_cursor_installed,
+    is_gemini_cli_installed,
+)
 from clean_code_reviewer.utils.file_ops import ensure_directory, read_file_safe, write_file_safe
 from clean_code_reviewer.utils.logger import setup_logging
 
@@ -63,65 +69,6 @@ def main(
     """Clean Code Reviewer - LLM-powered code review."""
     log_level = "DEBUG" if verbose else ("ERROR" if quiet else "INFO")
     setup_logging(level=log_level)
-
-
-
-
-def _is_claude_code_installed() -> bool:
-    """Check if Claude Code CLI is installed globally."""
-    import shutil
-
-    # Check if 'claude' command exists in PATH
-    if shutil.which("claude"):
-        return True
-
-    # Check if ~/.claude directory exists (Claude Code config dir)
-    claude_dir = Path.home() / ".claude"
-    if claude_dir.exists():
-        return True
-
-    return False
-
-
-def _is_gemini_cli_installed() -> bool:
-    """Check if Gemini CLI is installed globally."""
-    import shutil
-
-    # Check if 'gemini' command exists in PATH
-    if shutil.which("gemini"):
-        return True
-
-    # Check if ~/.gemini directory exists (Gemini CLI config dir)
-    gemini_dir = Path.home() / ".gemini"
-    if gemini_dir.exists():
-        return True
-
-    return False
-
-
-def _project_uses_claude(project_path: Path) -> bool:
-    """Check if project uses Claude Code (has .claude directory)."""
-    return (project_path / ".claude").exists()
-
-
-def _project_uses_gemini(project_path: Path) -> bool:
-    """Check if project uses Gemini CLI (has .gemini directory)."""
-    return (project_path / ".gemini").exists()
-
-
-def _get_project_targets(project_path: Path) -> list[str]:
-    """Get list of AI coding assistants that should be configured for this project.
-
-    Returns targets where both:
-    1. The CLI is installed globally
-    2. The project has the corresponding directory
-    """
-    targets = []
-    if _is_claude_code_installed() and _project_uses_claude(project_path):
-        targets.append("claude")
-    if _is_gemini_cli_installed() and _project_uses_gemini(project_path):
-        targets.append("gemini")
-    return targets
 
 
 def _get_prompt_instructions() -> str:
@@ -310,7 +257,7 @@ def init(
             console.print(f"  [green]✓[/green] Added .cleancoderules to .gitignore")
 
     # Install hooks for AI coding assistants used in this project
-    detected_targets = _get_project_targets(path)
+    detected_targets = get_project_targets(path)
 
     if detected_targets:
         console.print("\n[bold]Installing hooks...[/bold]")
@@ -604,11 +551,7 @@ def update_callback(
             console.print("  [yellow]No agent files found (CLAUDE.md or .cursorrules)[/yellow]")
 
         # Update hooks
-        detected_targets = []
-        if _is_claude_code_installed():
-            detected_targets.append("claude")
-        if _is_gemini_cli_installed():
-            detected_targets.append("gemini")
+        detected_targets = get_project_targets(path)
 
         if detected_targets:
             console.print("\n[bold]Updating hooks...[/bold]")
@@ -734,13 +677,9 @@ def update_hooks(
         Path,
         typer.Argument(help="Project path"),
     ] = Path("."),
-    global_scope: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Install globally (user-level)"),
-    ] = False,
     target: Annotated[
         str,
-        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', or 'all'"),
+        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', 'cursor', or 'all'"),
     ] = "all",
 ) -> None:
     """Update/reinstall hooks for AI coding assistants.
@@ -751,23 +690,13 @@ def update_hooks(
     Examples:
         ccr update hooks                 # Update hooks for detected CLIs
         ccr update hooks -t claude       # Update Claude Code hooks only
-        ccr update hooks -g              # Update global hooks
+        ccr update hooks -t cursor       # Update Cursor IDE hooks only
     """
-    scope = "user" if global_scope else "project"
-
     # Determine targets
     if target == "all":
-        # For global scope: only need CLI installed
-        # For project scope: need CLI installed AND project has directory
-        if global_scope:
-            targets = _get_detected_targets()
-        else:
-            targets = _get_project_targets(path)
+        targets = get_project_targets(path)
         if not targets:
-            if global_scope:
-                console.print("[yellow]No AI coding assistants detected[/yellow]")
-            else:
-                console.print("[yellow]No AI coding assistants detected for this project[/yellow]")
+            console.print("[yellow]No AI coding assistants detected for this project[/yellow]")
             raise typer.Exit(1)
     elif target in HOOK_TARGETS:
         targets = [target]
@@ -778,7 +707,7 @@ def update_hooks(
     console.print("[bold]Updating hooks...[/bold]")
 
     for t in targets:
-        settings_path = _get_settings_path(t, scope)
+        settings_path = _get_settings_path(t, "project")
         settings = _load_settings(settings_path)
 
         # Remove existing CCR hooks
@@ -1228,7 +1157,7 @@ hooks_app = typer.Typer(help="Manage AI coding assistant hooks for automatic cod
 app.add_typer(hooks_app, name="hooks")
 
 # Supported targets
-HOOK_TARGETS = ["claude", "gemini"]
+HOOK_TARGETS = ["claude", "gemini", "cursor"]
 
 
 def _get_ccr_hook_configs(target: str) -> dict:
@@ -1245,6 +1174,11 @@ def _get_ccr_hook_configs(target: str) -> dict:
                 "matcher": matcher,
                 "hooks": [{"type": "command", "command": "ccr hooks handle"}],
             },
+        }
+    elif target == "cursor":
+        # Cursor IDE: afterFileEdit only (simpler structure, no matcher)
+        return {
+            "afterFileEdit": {"command": "ccr hooks handle"},
         }
     else:  # claude
         # Claude Code: PostToolUse only
@@ -1264,6 +1198,12 @@ def _get_settings_path(target: str, scope: str) -> Path:
             return Path.home() / ".gemini" / "settings.json"
         else:  # project
             return Path(".gemini") / "settings.json"
+    elif target == "cursor":
+        # Cursor uses hooks.json instead of settings.json
+        if scope == "user":
+            return Path.home() / ".cursor" / "hooks.json"
+        else:  # project
+            return Path(".cursor") / "hooks.json"
     else:  # claude
         if scope == "user":
             return Path.home() / ".claude" / "settings.json"
@@ -1295,12 +1235,22 @@ def _save_settings(path: Path, settings: dict) -> None:
 
 
 def _is_ccr_hook_entry(hook: dict) -> bool:
-    """Check if a hook entry is a CCR hook."""
+    """Check if a hook entry is a CCR hook.
+
+    Handles both Claude/Gemini format (with hooks array) and Cursor format (direct command).
+    """
+    # Claude/Gemini format: {"matcher": "...", "hooks": [{"type": "command", "command": "..."}]}
     for h in hook.get("hooks", []):
         if h.get("type") == "command":
             cmd = h.get("command", "")
             if "ccr hooks handle" in cmd or "ccr review" in cmd:
                 return True
+
+    # Cursor format: {"command": "..."}
+    cmd = hook.get("command", "")
+    if "ccr hooks handle" in cmd or "ccr review" in cmd:
+        return True
+
     return False
 
 
@@ -1319,6 +1269,10 @@ def _has_ccr_hook(settings: dict, target: str) -> bool:
 
 def _add_ccr_hook(settings: dict, target: str) -> dict:
     """Add CCR hooks to settings for target."""
+    # Cursor hooks.json requires a version field
+    if target == "cursor" and "version" not in settings:
+        settings["version"] = 1
+
     if "hooks" not in settings:
         settings["hooks"] = {}
 
@@ -1366,54 +1320,29 @@ def _remove_ccr_hook(settings: dict, target: str) -> dict:
     return settings
 
 
-def _get_detected_targets() -> list[str]:
-    """Get list of detected AI coding assistants."""
-    targets = []
-    if _is_claude_code_installed():
-        targets.append("claude")
-    if _is_gemini_cli_installed():
-        targets.append("gemini")
-    return targets
-
-
 @hooks_app.command(name="install")
 def hooks_install(
-    global_scope: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Install globally (user-level)"),
-    ] = False,
     target: Annotated[
         str,
-        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', or 'all'"),
+        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', 'cursor', or 'all'"),
     ] = "all",
 ) -> None:
     """Install hooks for automatic code review.
 
-    Installs hooks for Claude Code and/or Gemini CLI.
+    Installs project-level hooks for Claude Code, Gemini CLI, and/or Cursor IDE.
 
     Examples:
         ccr hooks install                    # Install for detected CLIs
         ccr hooks install -t claude          # Install for Claude Code only
         ccr hooks install -t gemini          # Install for Gemini CLI only
-        ccr hooks install -g                 # Install globally
+        ccr hooks install -t cursor          # Install for Cursor IDE only
     """
-    scope = "user" if global_scope else "project"
-
     # Determine targets
     if target == "all":
-        # For global scope: only need CLI installed
-        # For project scope: need CLI installed AND project has directory
-        if global_scope:
-            targets = _get_detected_targets()
-        else:
-            targets = _get_project_targets(Path("."))
+        targets = get_project_targets(Path("."))
         if not targets:
-            if global_scope:
-                console.print("[yellow]No AI coding assistants detected[/yellow]")
-                console.print("Install Claude Code or Gemini CLI first")
-            else:
-                console.print("[yellow]No AI coding assistants detected for this project[/yellow]")
-                console.print("Make sure .claude or .gemini directory exists in your project")
+            console.print("[yellow]No AI coding assistants detected for this project[/yellow]")
+            console.print("Make sure .claude, .gemini, .cursor directory or CLAUDE.md, .cursorrules exists")
             raise typer.Exit(1)
     elif target in HOOK_TARGETS:
         targets = [target]
@@ -1423,7 +1352,7 @@ def hooks_install(
         raise typer.Exit(1)
 
     for t in targets:
-        settings_path = _get_settings_path(t, scope)
+        settings_path = _get_settings_path(t, "project")
         settings = _load_settings(settings_path)
 
         if _has_ccr_hook(settings, t):
@@ -1439,24 +1368,18 @@ def hooks_install(
 
 @hooks_app.command(name="uninstall")
 def hooks_uninstall(
-    global_scope: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Uninstall from global (user-level)"),
-    ] = False,
     target: Annotated[
         str,
-        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', or 'all'"),
+        typer.Option("--target", "-t", help="Target: 'claude', 'gemini', 'cursor', or 'all'"),
     ] = "all",
 ) -> None:
     """Uninstall hooks.
 
     Examples:
-        ccr hooks uninstall                  # Uninstall from all detected CLIs
+        ccr hooks uninstall                  # Uninstall from all targets
         ccr hooks uninstall -t claude        # Uninstall from Claude Code only
-        ccr hooks uninstall -g               # Uninstall from global settings
+        ccr hooks uninstall -t cursor        # Uninstall from Cursor IDE only
     """
-    scope = "user" if global_scope else "project"
-
     # Determine targets
     if target == "all":
         targets = HOOK_TARGETS
@@ -1467,7 +1390,7 @@ def hooks_uninstall(
         raise typer.Exit(1)
 
     for t in targets:
-        settings_path = _get_settings_path(t, scope)
+        settings_path = _get_settings_path(t, "project")
         settings = _load_settings(settings_path)
 
         if not _has_ccr_hook(settings, t):
@@ -1485,30 +1408,29 @@ def hooks_status() -> None:
 
     table = Table(title="CCR Hook Status")
     table.add_column("Target", style="cyan")
-    table.add_column("Scope", style="dim")
     table.add_column("Path", style="dim")
     table.add_column("Status", style="bold")
 
     for t in HOOK_TARGETS:
-        for scope in ("project", "user"):
-            settings_path = _get_settings_path(t, scope)
-            settings = _load_settings(settings_path)
+        settings_path = _get_settings_path(t, "project")
+        settings = _load_settings(settings_path)
 
-            if not settings_path.exists():
-                status = "[dim]No settings[/dim]"
-            elif _has_ccr_hook(settings, t):
-                status = "[green]Installed[/green]"
-            else:
-                status = "[yellow]Not installed[/yellow]"
+        if not settings_path.exists():
+            status = "[dim]No settings[/dim]"
+        elif _has_ccr_hook(settings, t):
+            status = "[green]Installed[/green]"
+        else:
+            status = "[yellow]Not installed[/yellow]"
 
-            table.add_row(t, scope, str(settings_path), status)
+        table.add_row(t, str(settings_path), status)
 
     console.print(table)
 
     # Show detection status
     console.print("\n[bold]Detection:[/bold]")
-    console.print(f"  Claude Code: {'[green]found[/green]' if _is_claude_code_installed() else '[dim]not found[/dim]'}")
-    console.print(f"  Gemini CLI:  {'[green]found[/green]' if _is_gemini_cli_installed() else '[dim]not found[/dim]'}")
+    console.print(f"  Claude Code: {'[green]found[/green]' if is_claude_code_installed() else '[dim]not found[/dim]'}")
+    console.print(f"  Gemini CLI:  {'[green]found[/green]' if is_gemini_cli_installed() else '[dim]not found[/dim]'}")
+    console.print(f"  Cursor IDE:  {'[green]found[/green]' if is_cursor_installed() else '[dim]not found[/dim]'}")
 
 
 @hooks_app.command(name="handle", hidden=True)
