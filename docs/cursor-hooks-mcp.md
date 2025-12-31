@@ -1,4 +1,8 @@
-# Cursor Hooks
+# Cursor Hooks and MCP Configuration
+
+Cursor supports both hooks (for automation) and MCP (Model Context Protocol) for extending AI capabilities with external tools.
+
+## Hooks
 
 Cursor hooks enable developers to observe, control, and extend Cursor's agent loop using custom scripts. They are spawned processes that communicate via JSON over stdio, running before or after defined stages of the agent workflow.
 
@@ -175,6 +179,97 @@ exit 0
 - Restart Cursor if hooks don't activate
 - Verify script paths are relative to `hooks.json` location
 
+---
+
+## MCP Configuration
+
+MCP (Model Context Protocol) allows Cursor to connect to external tools, databases, and APIs.
+
+### Configuration Locations
+
+| Scope | Location |
+|-------|----------|
+| Project-specific | `.cursor/mcp.json` |
+| Global (all projects) | `~/.cursor/mcp.json` |
+
+### Configuration Format
+
+```json
+{
+  "mcpServers": {
+    "server-name": {
+      "command": "executable",
+      "args": ["arg1", "arg2"],
+      "env": {
+        "API_KEY": "value"
+      }
+    }
+  }
+}
+```
+
+### Transport Types
+
+| Transport | Use Case | Configuration |
+|-----------|----------|---------------|
+| `stdio` | Local servers | `command` + `args` |
+| `SSE` | Remote servers | `url` field |
+| `Streamable HTTP` | Remote servers | `url` field |
+
+### STDIO Server Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `command` | Yes | Executable (npx, node, python, docker) |
+| `args` | No | Command arguments array |
+| `env` | No | Environment variables |
+| `envFile` | No | Path to .env file |
+
+### Remote Server Example
+
+```json
+{
+  "mcpServers": {
+    "my-api": {
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:API_KEY}"
+      }
+    }
+  }
+}
+```
+
+### Variable Interpolation
+
+- `${env:NAME}` — environment variable
+- `${userHome}` — home folder path
+- `${workspaceFolder}` — project root
+- `${workspaceFolderBasename}` — project folder name
+
+### CCR MCP Integration
+
+Configure CCR as an MCP server in `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "clean-code-reviewer": {
+      "command": "ccr",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+This allows on-demand code reviews via the Cursor agent.
+
+### Limitations
+
+- Cursor sends only the first 40 tools to the Agent
+- Some MCP servers may have many tools; consider which ones to enable
+
 ## References
 
 - [Cursor Hooks Documentation](https://cursor.com/docs/agent/hooks)
+- [Cursor MCP Documentation](https://cursor.com/docs/context/mcp)
