@@ -1,7 +1,10 @@
-.PHONY: mcp test lint typecheck
+.PHONY: start-mcp stop-mcp test lint typecheck
 
-mcp:
+start-mcp:
 	uv run ccr mcp --transport sse --port 11111
+
+stop:
+	@lsof -ti:11111 | xargs kill -9 2>/dev/null || echo "No MCP server running on port 11111"
 
 test:
 	uv run pytest
