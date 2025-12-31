@@ -8,6 +8,10 @@
 
 - Supports integration with any MCP-compatible client (Claude Code, Cursor, etc.) and multiple LLM providers via LiteLLM.
 
+## Disclaimer
+
+CleanCodeReviewer is an independent, open-source tool inspired by widely accepted software engineering principles. It is not affiliated with, endorsed by, or connected to Robert C. Martin or the authors of the book 'Clean Code'.
+
 ## Features
 
 - **Rule-based Code Review**: Define custom coding standards in yml files
