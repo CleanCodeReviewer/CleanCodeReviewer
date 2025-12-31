@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 
 # Level hierarchy: base (1) < community (2) < team (3)
-# Inferred from: base.md/base.yml = L1, community/ = L2, team/ = L3
+# Inferred from: base.yml = L1, community/ = L2, team/ = L3
 LEVEL_NAMES = {1: "Base", 2: "Community", 3: "Team"}
 
 
@@ -175,7 +175,7 @@ class RulesEngine:
                     sub_path = sub_path[:-3]
                 return sub_path
 
-            # For base.md or other root files
+            # For base.yml or other root files
             if len(parts) == 1:
                 return parts[0].replace(".md", "")
 
@@ -260,7 +260,7 @@ class RulesEngine:
         if isinstance(tags, str):
             tags = [tags]
 
-        # Infer level from file path: base.md = L1, teams/ = L3, else = L2
+        # Infer level from file path: base.yml = L1, teams/ = L3, else = L2
         level = frontmatter.get("level", self._infer_level(file_path))
 
         return Rule(
@@ -281,9 +281,9 @@ class RulesEngine:
         Infer rule level from file path.
 
         Convention:
-        - base.md (exact filename at root) -> Level 1 (base principles)
-        - community/**/*.md -> Level 2 (all external/community rules)
-        - team/**/*.md -> Level 3 (team rules, highest priority)
+        - base.yml (exact filename at root) -> Level 1 (base principles)
+        - community/**/*.yml -> Level 2 (all external/community rules)
+        - team/**/*.yml -> Level 3 (team rules, highest priority)
 
         Args:
             file_path: Path to the rule file
@@ -296,8 +296,8 @@ class RulesEngine:
             rel_path = file_path.relative_to(self.rules_dir)
             parts = rel_path.parts
 
-            # base.md at root = Level 1
-            if len(parts) == 1 and parts[0].lower() == "base.md":
+            # base.yml at root = Level 1
+            if len(parts) == 1 and parts[0].lower() in ("base.yml", "base.yaml"):
                 return 1
 
             if parts:

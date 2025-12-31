@@ -25,8 +25,8 @@ class TestCLIInit:
         assert (tmp_path / ".cleancoderules" / "community").is_dir()
         assert (tmp_path / ".cleancoderules" / "team").is_dir()
         assert (tmp_path / ".cleancoderules" / "config.yaml").exists()
-        assert (tmp_path / ".cleancoderules" / "base.md").exists()
-        assert (tmp_path / ".cleancoderules" / "team" / "example.md").exists()
+        assert (tmp_path / ".cleancoderules" / "base.yml").exists()
+        assert (tmp_path / ".cleancoderules" / "team" / "example.yml").exists()
 
     def test_init_existing_directory(self, tmp_path: Path) -> None:
         """Test init with existing rules directory."""
@@ -60,7 +60,7 @@ class TestCLIList:
         result = runner.invoke(app, ["list", "-d", str(rules_dir)])
 
         assert result.exit_code == 0
-        assert "no rules" in result.stdout.lower()
+        assert "no local rules found" in result.stdout.lower()
 
     def test_list_with_rules(self, tmp_path: Path) -> None:
         """Test list with rules installed."""

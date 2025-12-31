@@ -6,7 +6,7 @@ Clean Code Reviewer uses a 3-level cascading rule system. Higher levels override
 
 | Level | Directory    | Purpose                           | Example                                  |
 | ----- | ------------ | --------------------------------- | ---------------------------------------- |
-| 1     | `base.md`    | Universal principles              | "Write clean, readable code"              |
+| 1     | `base.yml`   | Universal principles              | "Write clean, readable code"              |
 | 2     | `community/` | All external rules (equal status) | Google Python, Airbnb JS, anyone's rules |
 | 3     | `team/`      | Your team's overrides (HIGHEST)   | Company-specific conventions             |
 
@@ -17,17 +17,18 @@ Clean Code Reviewer uses a 3-level cascading rule system. Higher levels override
 ```
 .cleancoderules/
 ├── config.yaml
-├── base.md                    # Level 1 - Base principles
+├── base.yml                   # Level 1 - Base principles
+├── order.yml                  # Rule ordering within levels
 ├── community/                 # Level 2 - All external rules
 │   ├── google/
-│   │   └── python.md
+│   │   └── python.yml
 │   ├── airbnb/
-│   │   └── javascript.md
+│   │   └── javascript.yml
 │   └── anycompany/
-│       └── their-rules.md
+│       └── their-rules.yml
 └── team/                      # Level 3 - YOUR rules (HIGHEST)
-    ├── naming.md
-    └── logging.md
+    ├── naming.yml
+    └── logging.yml
 ```
 
 ## How Overrides Work
@@ -37,13 +38,13 @@ Rules are loaded in order: Level 1 → 2 → 3. Later rules override earlier one
 ### Example: Function Length
 
 ```
-Level 1 (base.md):
+Level 1 (base.yml):
   "Keep functions under 20 lines"
 
-Level 2 (community/google/python.md):
+Level 2 (community/google/python.yml):
   "Functions should be under 40 lines for Python"
 
-Level 3 (team/exceptions.md):
+Level 3 (team/exceptions.yml):
   "Data processing functions may be up to 100 lines"
 ```
 
@@ -55,12 +56,12 @@ Level 3 (team/exceptions.md):
 
 ```bash
 # Default: download to community/
-ccr add google/python                    # → community/google/python.md
-ccr add airbnb/javascript                # → community/airbnb/javascript.md
-ccr add anycompany/their-style           # → community/anycompany/their-style.md
+ccr add google/python                    # → community/google/python.yml
+ccr add airbnb/javascript                # → community/airbnb/javascript.yml
+ccr add anycompany/their-style           # → community/anycompany/their-style.yml
 
 # Download to team/ (for shared team templates)
-ccr add -d team myteam/standards         # → team/myteam/standards.md
+ccr add -d team myteam/standards         # → team/myteam/standards.yml
 ```
 
 ### Add Local Files

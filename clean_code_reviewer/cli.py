@@ -100,6 +100,8 @@ def _install_hooks_for_init(path: Path, target: str) -> None:
     # Get settings path based on target
     if target == "gemini":
         settings_path = path / ".gemini" / "settings.json"
+    elif target == "cursor":
+        settings_path = path / ".cursor" / "hooks.json"
     else:  # claude
         settings_path = path / ".claude" / "settings.json"
 
@@ -118,27 +120,39 @@ def _install_hooks_for_init(path: Path, target: str) -> None:
 
     # Check if already installed
     already_installed = False
-    hooks = settings.get("hooks", {})
-    for event_name in hook_configs:
-        event_hooks = hooks.get(event_name, [])
-        for hook in event_hooks:
-            for h in hook.get("hooks", []):
-                if h.get("type") == "command" and "ccr hooks handle" in h.get("command", ""):
-                    already_installed = True
-                    break
+    if target == "cursor":
+        # Cursor format: {"afterFileEdit": {"command": "..."}}
+        hook = settings.get("afterFileEdit", {})
+        if "ccr hooks handle" in hook.get("command", ""):
+            already_installed = True
+    else:
+        # Claude/Gemini format: {"hooks": {"EventName": [{"hooks": [...]}]}}
+        hooks = settings.get("hooks", {})
+        for event_name in hook_configs:
+            event_hooks = hooks.get(event_name, [])
+            for hook in event_hooks:
+                for h in hook.get("hooks", []):
+                    if h.get("type") == "command" and "ccr hooks handle" in h.get("command", ""):
+                        already_installed = True
+                        break
 
     if already_installed:
         console.print(f"  [dim]-[/dim] {target}: hooks already installed")
         return
 
     # Add hooks
-    if "hooks" not in settings:
-        settings["hooks"] = {}
-
-    for event_name, hook_config in hook_configs.items():
-        if event_name not in settings["hooks"]:
-            settings["hooks"][event_name] = []
-        settings["hooks"][event_name].append(hook_config)
+    if target == "cursor":
+        # Cursor format: {"afterFileEdit": {"command": "..."}}
+        for event_name, hook_config in hook_configs.items():
+            settings[event_name] = hook_config
+    else:
+        # Claude/Gemini format: {"hooks": {"EventName": [...]}}
+        if "hooks" not in settings:
+            settings["hooks"] = {}
+        for event_name, hook_config in hook_configs.items():
+            if event_name not in settings["hooks"]:
+                settings["hooks"][event_name] = []
+            settings["hooks"][event_name].append(hook_config)
 
     # Save
     ensure_directory(settings_path.parent)

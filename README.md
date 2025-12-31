@@ -57,18 +57,20 @@ This creates a `.cleancoderules/` directory with the cascading rule structure:
 ```
 .cleancoderules/
 ├── config.yaml          # Configuration
-├── base.md              # Level 1 - Base principles
-├── google/              # Level 2 - Namespace rules
-│   └── python.md
-└── teams/               # Level 3 - Team rules (HIGHEST PRIORITY)
-    └── example.md
+├── base.yml             # Level 1 - Base principles
+├── order.yml            # Rule ordering within levels
+├── community/           # Level 2 - External/community rules
+│   └── google/
+│       └── python.yml
+└── team/                # Level 3 - Team rules (HIGHEST PRIORITY)
+    └── example.yml
 ```
 
 **Rule Hierarchy:**
 
-- `base.md` → Level 1 (base principles, loaded first)
-- `<namespace>/*.md` → Level 2 (style guides, e.g., google/, airbnb/)
-- `teams/*.md` → Level 3 (team overrides, highest priority)
+- `base.yml` → Level 1 (base principles, loaded first)
+- `community/**/*.yml` → Level 2 (external rules, e.g., google/, airbnb/)
+- `team/*.yml` → Level 3 (team overrides, highest priority)
 
 ### 2. Add rules
 

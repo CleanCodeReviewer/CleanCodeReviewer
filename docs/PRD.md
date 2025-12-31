@@ -88,29 +88,31 @@ Level 3: Team/Project Custom Rules (Highest Priority)
 project-root/
 ├── .cleancoderules/
 │   ├── config.yaml            # Configuration
-│   ├── base.md                # Level 1 - Base principles
-│   ├── google/                # Level 2 - Namespace rules
-│   │   └── python.md
-│   ├── airbnb/
-│   │   └── javascript.md
-│   └── teams/                 # Level 3 - Team rules (HIGHEST)
-│       ├── security.md
-│       └── naming.md
+│   ├── base.yml               # Level 1 - Base principles
+│   ├── order.yml              # Rule ordering within levels
+│   ├── community/             # Level 2 - External/community rules
+│   │   ├── google/
+│   │   │   └── python.yml
+│   │   └── airbnb/
+│   │       └── javascript.yml
+│   └── team/                  # Level 3 - Team rules (HIGHEST)
+│       ├── security.yml
+│       └── naming.yml
 │
 └── CLAUDE.md                  # Auto-trigger instructions
 ```
 
 **Hierarchy:**
 
-- `base.md` → Level 1 (base principles)
-- `<namespace>/*.md` → Level 2 (style guides)
-- `teams/*.md` → Level 3 (team overrides, highest priority)
+- `base.yml` → Level 1 (base principles)
+- `<namespace>/*.yml` → Level 2 (style guides)
+- `team/*.yml` → Level 3 (team overrides, highest priority)
 
 **Remote Rules Repository (https://github.com/CleanCodeReviewer/Rules):**
 
 ```
 Rules/                         # Separate GitHub repository
-├── base.md                    # Base principles (downloaded to base.md)
+├── base.yml                   # Base principles (downloaded to base.yml)
 ├── google/
 │   ├── python.md              # Google Python Style
 │   ├── go.md
@@ -321,19 +323,19 @@ clean_code_reviewer/
 
 **FR-2.5** Level inference from file path:
 
-- `.cleancoderules/base.md` → Level 1 (base principles)
-- `.cleancoderules/<namespace>/*.md` → Level 2 (namespace style guides)
-- `.cleancoderules/teams/*.md` → Level 3 (team rules, highest priority)
+- `.cleancoderules/base.yml` → Level 1 (base principles)
+- `.cleancoderules/community/**/*.yml` → Level 2 (community/external rules)
+- `.cleancoderules/team/*.yml` → Level 3 (team rules, highest priority)
 
 ### FR-3: CLI
 
 **FR-3.1** `ccr init` SHALL:
 
-- Create `.cleancoderules/` with `teams/` subdirectory
+- Create `.cleancoderules/` with `community/` and `team/` subdirectories
 - Generate `config.yaml` with defaults
-- Download `base.md` from remote (or create sample)
+- Download `base.yml` from remote (or create sample)
 - Prompt user to select languages and download to namespace folders
-- Create sample `teams/example.md`
+- Create sample `team/example.yml`
 - Optionally create/update CLAUDE.md or .cursorrules
 
 **FR-3.2** `ccr add <namespace/rule>` SHALL:
@@ -459,7 +461,7 @@ clean_code_reviewer/
 - [x] **FR-1.3**: Implement cascading sort (Level → Order)
 - [x] **FR-1.4**: Update prompt builder with Level headers
 - [x] **FR-1.5**: Add conflict resolution instructions to prompts
-- [x] **FR-2.5**: Implement level inference (`base.md`=L1, `teams/`=L3, else=L2)
+- [x] **FR-2.5**: Implement level inference (`base.yml`=L1, `team/`=L3, else=L2)
 - [x] **FR-3.1**: Enhanced `ccr init` with simplified structure, language selection
 - [x] **FR-3.2**: `ccr add` downloads to namespace folders
 
@@ -468,7 +470,7 @@ clean_code_reviewer/
 - [ ] **FR-3.1**: Generate `CLAUDE.md` template in `ccr init` (optional)
 - [ ] **FR-4.1**: Add `get_cascading_rules` MCP tool
 - [ ] **FR-4.4**: Auto-detect project root in MCP server
-- [ ] Create `base.md` in Rules repository as Level 1 base rules
+- [ ] Create `base.yml` in Rules repository as Level 1 base rules
 - [ ] Create initial rules in https://github.com/CleanCodeReviewer/Rules
 
 ---

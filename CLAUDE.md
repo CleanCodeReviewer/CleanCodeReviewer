@@ -57,7 +57,7 @@ Rules cascade with higher levels overriding lower levels:
 
 | Level | Location     | Purpose                                |
 | ----- | ------------ | -------------------------------------- |
-| 1     | `base.md`    | Universal principles (lowest priority) |
+| 1     | `base.yml`   | Universal principles (lowest priority) |
 | 2     | `community/` | External rules (Google, Airbnb, etc.)  |
 | 3     | `team/`      | Team overrides (HIGHEST priority)      |
 
