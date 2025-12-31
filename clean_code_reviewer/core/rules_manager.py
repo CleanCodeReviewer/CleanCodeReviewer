@@ -87,16 +87,17 @@ class RulesManager:
         Fetch a rule from the remote repository.
 
         Args:
-            rule_path: Path to the rule (e.g., "google/python" or "general")
+            rule_path: Path to the rule (e.g., "google/python" or "base")
 
         Returns:
             Rule content as string, or None if not found
         """
-        # Add .md extension if not present
-        if not rule_path.endswith(".md"):
-            rule_path = f"{rule_path}.md"
+        # Add .yml extension if not present
+        if not rule_path.endswith(".yml"):
+            rule_path = f"{rule_path}.yml"
 
-        url = self._get_raw_url(rule_path)
+        # Rules are stored under src/ in the repository
+        url = self._get_raw_url(f"src/{rule_path}")
         logger.info(f"Fetching rule from: {url}")
 
         try:
@@ -122,7 +123,7 @@ class RulesManager:
         Download a rule and save it to the local rules directory.
 
         Args:
-            rule_path: Path to the rule (e.g., "google/python")
+            rule_path: Path to the rule (e.g., "google/python" or "base")
             target_dir: Target directory (defaults to .cleancoderules)
 
         Returns:
@@ -138,12 +139,16 @@ class RulesManager:
             return None
 
         # Determine the save path
-        # "google/python" -> ".cleancoderules/google/python.md"
-        # "general" -> ".cleancoderules/general.md"
-        if not rule_path.endswith(".md"):
-            rule_path = f"{rule_path}.md"
+        # "base" -> ".cleancoderules/base.yml"
+        # "google/python" -> ".cleancoderules/community/google/python.yml"
+        if not rule_path.endswith(".yml"):
+            rule_path = f"{rule_path}.yml"
 
-        save_path = target_dir / rule_path
+        # Namespace rules go under community/
+        if "/" in rule_path:
+            save_path = target_dir / "community" / rule_path
+        else:
+            save_path = target_dir / rule_path
 
         # Ensure directory exists
         ensure_directory(save_path.parent)
@@ -166,39 +171,37 @@ class RulesManager:
         rules: list[RemoteRule] = []
 
         try:
-            # Fetch root contents
-            root_contents = self._fetch_contents("")
-            if root_contents is None:
+            # Fetch src/ directory contents (rules are stored under src/)
+            src_contents = self._fetch_contents("src")
+            if src_contents is None:
                 return []
 
-            for item in root_contents:
-                if item["type"] == "file" and item["name"].endswith(".md"):
-                    # Root-level rule (e.g., general.md)
-                    name = item["name"].removesuffix(".md")
-                    if name.lower() != "readme":
-                        rules.append(
-                            RemoteRule(
-                                namespace="",
-                                name=name,
-                                path=item["path"],
-                            )
+            for item in src_contents:
+                if item["type"] == "file" and item["name"].endswith(".yml"):
+                    # Root-level rule (e.g., base.yml)
+                    name = item["name"].removesuffix(".yml")
+                    rules.append(
+                        RemoteRule(
+                            namespace="",
+                            name=name,
+                            path=item["path"],
                         )
+                    )
                 elif item["type"] == "dir":
                     # Namespace directory (e.g., google/, airbnb/)
                     namespace = item["name"]
-                    dir_contents = self._fetch_contents(namespace)
+                    dir_contents = self._fetch_contents(f"src/{namespace}")
                     if dir_contents:
                         for sub_item in dir_contents:
-                            if sub_item["type"] == "file" and sub_item["name"].endswith(".md"):
-                                name = sub_item["name"].removesuffix(".md")
-                                if name.lower() != "readme":
-                                    rules.append(
-                                        RemoteRule(
-                                            namespace=namespace,
-                                            name=name,
-                                            path=sub_item["path"],
-                                        )
+                            if sub_item["type"] == "file" and sub_item["name"].endswith(".yml"):
+                                name = sub_item["name"].removesuffix(".yml")
+                                rules.append(
+                                    RemoteRule(
+                                        namespace=namespace,
+                                        name=name,
+                                        path=sub_item["path"],
                                     )
+                                )
 
             return rules
 
@@ -234,10 +237,11 @@ class RulesManager:
         Returns:
             True if rule exists, False otherwise
         """
-        if not rule_path.endswith(".md"):
-            rule_path = f"{rule_path}.md"
+        if not rule_path.endswith(".yml"):
+            rule_path = f"{rule_path}.yml"
 
-        url = self._get_raw_url(rule_path)
+        # Rules are stored under src/ in the repository
+        url = self._get_raw_url(f"src/{rule_path}")
 
         try:
             response = self.client.head(url)

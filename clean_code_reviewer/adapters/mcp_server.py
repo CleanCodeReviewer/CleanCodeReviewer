@@ -16,6 +16,8 @@ logger = get_logger(__name__)
 def create_mcp_server(
     rules_dir: Path | str | None = None,
     name: str = "clean-code-reviewer",
+    host: str = "127.0.0.1",
+    port: int = 8000,
 ) -> FastMCP:
     """
     Create and configure the MCP server.
@@ -23,11 +25,13 @@ def create_mcp_server(
     Args:
         rules_dir: Directory containing rules
         name: Server name
+        host: Host to bind to (for SSE transport)
+        port: Port to listen on (for SSE transport)
 
     Returns:
         Configured FastMCP server instance
     """
-    mcp = FastMCP(name)
+    mcp = FastMCP(name, host=host, port=port)
 
     # Initialize components
     if rules_dir is None:
@@ -62,7 +66,7 @@ def create_mcp_server(
                 "name": rule.name,
                 "language": rule.language,
                 "tags": rule.tags,
-                "priority": rule.priority,
+                "level": rule.level,
             }
             for rule in rules
         ]
@@ -87,7 +91,7 @@ def create_mcp_server(
             "name": rule.name,
             "language": rule.language,
             "tags": rule.tags,
-            "priority": rule.priority,
+            "level": rule.level,
             "content": rule.content,
             "source_file": str(rule.source_file) if rule.source_file else None,
         }
@@ -146,7 +150,7 @@ def run_mcp_server(
         host: Host to bind to (for SSE transport)
         port: Port to listen on (for SSE transport)
     """
-    mcp = create_mcp_server(rules_dir)
+    mcp = create_mcp_server(rules_dir, host=host, port=port)
 
     logger.info(f"Starting MCP server (transport={transport})")
 
@@ -154,4 +158,4 @@ def run_mcp_server(
         mcp.run(transport="stdio")
     else:
         logger.info(f"MCP SSE server listening on http://{host}:{port}")
-        mcp.run(transport="sse", host=host, port=port)
+        mcp.run(transport="sse")
