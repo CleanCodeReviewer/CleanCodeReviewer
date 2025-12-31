@@ -137,22 +137,8 @@ def init(
     ensure_directory(rules_dir / "team")
     console.print(f"  [green]✓[/green] Created {rules_dir}/ (community/, team/)")
 
-    # Create default config (minimal - users configure via env vars or edit this file)
-    default_config = """# Clean Code Reviewer Configuration
-# Set your preferred model and API key via environment variables:
-#   CCR_MODEL=gpt-4 (or claude-3-opus, gemini-pro, etc.)
-#   OPENAI_API_KEY=sk-...
-#   ANTHROPIC_API_KEY=sk-ant-...
-#
-# Or uncomment and set here:
-# model: gpt-4
-# temperature: 0.3
-# max_tokens: 2000
-#
-# Default reviewer for 'ccr review' command:
-# default_reviewer: litellm
-"""
-    write_file_safe(rules_dir / "config.yaml", default_config)
+    # Create empty config file
+    write_file_safe(rules_dir / "config.yaml", "")
     console.print(f"  [green]✓[/green] Created config.yaml")
 
     # Download base.yml (Level 1)
