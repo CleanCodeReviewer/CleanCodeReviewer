@@ -356,18 +356,6 @@ functions:
   max_lines:
     enforcement: SHOULD
     value: 80
-    good: |
-      def process_data(data):
-          # A longer function is acceptable when logic is cohesive
-          validate(data)
-          transform(data)
-          save(data)
-    bad: |
-      def do_everything():
-          # Avoid functions that do unrelated things
-          send_email()
-          update_database()
-          render_pdf()
 """
     write_file_safe(team_dir / "example.yml", sample_rule)
 
