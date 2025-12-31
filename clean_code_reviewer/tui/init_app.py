@@ -130,7 +130,9 @@ class InitApp(App[InitResult]):
             yield Static("Choose languages used in this project:", classes="section-subtitle")
             with Vertical(id="languages-container"):
                 for lang in AVAILABLE_LANGUAGES:
-                    yield Checkbox(lang, id=f"lang-{lang.lower()}")
+                    # Sanitize ID: replace invalid chars with underscores
+                    safe_id = lang.lower().replace("+", "plus").replace("#", "sharp")
+                    yield Checkbox(lang, id=f"lang-{safe_id}")
 
             yield Static("Agent Integration", classes="section-title")
             yield Static("Create config files for AI assistants:", classes="section-subtitle")
@@ -146,15 +148,19 @@ class InitApp(App[InitResult]):
             yield Static("Press Enter to continue, Esc to cancel", id="status")
         yield Footer()
 
+    def _sanitize_id(self, name: str) -> str:
+        """Sanitize a name for use as widget ID."""
+        return name.lower().replace("+", "plus").replace("#", "sharp")
+
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle checkbox state changes."""
         checkbox_id = event.checkbox.id or ""
 
         if checkbox_id.startswith("lang-"):
-            lang = checkbox_id.replace("lang-", "")
-            # Find the actual language name (case-insensitive match)
+            lang_id = checkbox_id.replace("lang-", "")
+            # Find the actual language name by matching sanitized ID
             for full_lang in AVAILABLE_LANGUAGES:
-                if full_lang.lower() == lang:
+                if self._sanitize_id(full_lang) == lang_id:
                     if event.value:
                         self.selected_languages.add(full_lang)
                     else:
